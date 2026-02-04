@@ -1,0 +1,23 @@
+{
+  "region": "Регион миллионник",
+  "age_group": "35-39",
+  "education": "бакалавриат",
+  "income_level": "Средний: 27 000-45000",
+  "marital_status": "Женат",
+  "gender": "Женский",
+  "children_group": "0",
+  "occupation": "Уборщик",
+  "cluster_id": 0,
+  "group_key": "(7, 3, 1, 1)",
+  "n_americans_in_group": 2,
+  "n_clusters_total": 1,
+  "openness": "умеренно открыт новому",
+  "conscientiousness": "очень организован, планирует всё до деталей",
+  "extraversion": "склонен к одиночеству, избегает социума",
+  "agreeableness": "альтруист, эмпатичен, готов помочь",
+  "neuroticism": "обычно спокоен, но может реагировать на сложности",
+  "cluster_weight": 1.0,
+  "target_audience_id": 1,
+  "target_audience_name": "mothers",
+  "data_source": "pgm_synthetic"
+}

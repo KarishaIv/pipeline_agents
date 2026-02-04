@@ -253,7 +253,8 @@ class PersonaAgent(ABC):
     def __init__(
         self,
         agent_name: str,
-        model: str = "gpt-4.1-mini",
+        #model: str = "gpt-4.1-mini",
+        model = None,  # Использует LLM_MODEL из config по умолчанию
         temperature: float = 0.7
     ):
         self.agent_name = agent_name
@@ -361,7 +362,7 @@ class PersonaAgent(ABC):
 
 class EmotionalAgent(PersonaAgent):
     
-    def __init__(self, model: str = "gpt-4o", temperature: float = 0.8):
+    def __init__(self, model = None, temperature: float = 0.8):
         super().__init__(agent_name="emotional", model=model, temperature=temperature)
     
     def get_system_prompt(self) -> str:

@@ -1,11 +1,12 @@
 import numpy as np
 import os
 from pathlib import Path
+from yandex_chain import YandexGPTModel
 
 PROJECT_ROOT = Path(__file__).parent
 
-# LLM настройки
-LLM_MODEL = "gpt-4.1-mini"
+
+LLM_MODEL = YandexGPTModel.Pro  
 LLM_TEMPERATURE = 0.5
 LLM_MAX_RETRIES = 3
 
@@ -68,10 +69,14 @@ TOP_N_NEIGHBORS = 5
 TOP_N_CATEGORIES = 2
 DEFAULT_NEMO_SIZE = 10000
 
-def set_openai_api_key(api_key: str):
-    """Set OpenAI API key"""
+
+def set_openai_api_key(api_key: str, folder_id: str = None):
+    """Set Yandex GPT API key and folder ID"""
     os.environ["OPENAI_API_KEY"] = api_key
-    os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
+    if folder_id:
+        os.environ["YANDEX_FOLDER_ID"] = folder_id
+    else:
+        os.environ["YANDEX_FOLDER_ID"] = api_key
 
 GMM_CONFIG = {'n_components': 1,        
     'min_components': 3,           # минимальное количество кластеров для auto
