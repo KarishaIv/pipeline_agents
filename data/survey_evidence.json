@@ -1,0 +1,82 @@
+[
+  {
+    "target_audience_name": "fledglings",
+    "synthetic_size": 6,
+    "age_group": 18,
+    "children_group": 0,
+    "marital_status": "Не женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "nest_builders",
+    "synthetic_size": 8,
+    "age_group": 25,
+    "children_group": 0,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "middle_age_couples_no_children",
+    "synthetic_size": 4,
+    "age_group": 35,
+    "children_group": 0,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "middle_age_singles",
+    "synthetic_size": 4,
+    "age_group": 35,
+    "children_group": 0,
+    "marital_status": "Не женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "preschool_parents",
+    "synthetic_size": 11,
+    "age_group": 35,
+    "children_group": 1,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "elementary_parents",
+    "synthetic_size": 10,
+    "age_group": 40,
+    "children_group": 2,
+    "marital_status": "Не женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "teen_parents",
+    "synthetic_size": 8,
+    "age_group": 45,
+    "children_group": 2,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "adult_children_parents",
+    "synthetic_size": 11,
+    "age_group": 55,
+    "children_group": 2,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "empty_nesters",
+    "synthetic_size": 16,
+    "age_group": 55,
+    "children_group": 2,
+    "marital_status": "Женат",
+    "region": "Регион миллионник"
+  },
+  {
+    "target_audience_name": "senior_singles",
+    "synthetic_size": 8,
+    "age_group": 65,
+    "children_group": 0,
+    "marital_status": "Не женат",
+    "region": "Регион миллионник"
+  }
+]
