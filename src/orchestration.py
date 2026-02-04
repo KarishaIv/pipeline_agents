@@ -334,14 +334,23 @@ async def _process_target_audiences_generic(
         )
         
         # 6. Формирование статистики
+        # Проверяем наличие колонок перед обращением
+        unique_clusters = None
+        unique_groups = None
+        if ocean_flag and len(final_personas) > 0:
+            if 'cluster_id' in final_personas.columns:
+                unique_clusters = final_personas['cluster_id'].nunique()
+            if 'group_key' in final_personas.columns:
+                unique_groups = final_personas['group_key'].nunique()
+        
         ta_stats = _create_ta_stats(
             ta_index=ta_index,
             ta_name=ta_name,
             data_source=data_source,
             original_size=original_size,
             replicated_size=len(final_personas),
-            unique_clusters=None if not ocean_flag else final_personas['cluster_id'].nunique(),
-            unique_groups=None if not ocean_flag else final_personas['group_key'].nunique()
+            unique_clusters=unique_clusters,
+            unique_groups=unique_groups
         )
 
         logger.info(f"[TA:{ta_name}] Обработка завершена: {len(final_personas)} персон")

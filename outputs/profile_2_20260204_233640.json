@@ -1,0 +1,23 @@
+{
+  "region": "Бедный регион",
+  "age_group": "45-49",
+  "education": "среднего профессионального образования",
+  "income_level": "Выше_среднего: 45 000-123500",
+  "marital_status": "Женат",
+  "gender": "Мужской",
+  "children_group": "1",
+  "occupation": "Медсестра",
+  "cluster_id": 0,
+  "group_key": "(9, 1, 1, 0)",
+  "n_americans_in_group": 94,
+  "n_clusters_total": 1,
+  "openness": "очень открыт новому, любит экспериментировать",
+  "conscientiousness": "дисциплинирован, пунктуален, ответственен",
+  "extraversion": "умеренно общителен, зависит от настроения",
+  "agreeableness": "альтруист, эмпатичен, готов помочь",
+  "neuroticism": "эмоционально стабилен, спокоен при стрессе",
+  "cluster_weight": 1.0,
+  "target_audience_id": 0,
+  "target_audience_name": "fathers",
+  "data_source": "pgm_synthetic"
+}

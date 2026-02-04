@@ -8,22 +8,141 @@ from typing import Dict, List, Optional, Any
 import logging 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
-from langchain_openai import ChatOpenAI
+from yandex_chain import YandexLLM
 from pydantic import BaseModel
+import re
 
 import pandas as pd
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def robust_llm_call(prompt: str, model: str = "gpt-4.1-mini", temperature: float = 0.5, structured_output: Optional[BaseModel]=None):
-    llm = ChatOpenAI(model=model, temperature=temperature)
-    if structured_output:
-        structured_llm = llm.with_structured_output(structured_output)
-        return await asyncio.to_thread(lambda: structured_llm.invoke(prompt))
+def _get_text_from_response(response) -> str:
+    """Универсальная функция для получения текста из ответа LLM"""
+    # YandexLLM может возвращать строку напрямую или объект с .content
+    if isinstance(response, str):
+        return response
+    elif hasattr(response, 'content'):
+        return response.content
+    elif hasattr(response, 'text'):
+        return response.text
     else:
-        return await asyncio.to_thread(lambda: llm.invoke(prompt).content)
+        return str(response)
+
+def _extract_values_from_nested_dict(data: Any) -> Any:
+    """Извлекает фактические значения из вложенных структур JSON.
+    
+    Если значение - это словарь с ключами 'description' или 'value', 
+    извлекает значение из него. Иначе возвращает как есть.
+    """
+    if isinstance(data, dict):
+        # Если это словарь с описанием схемы (содержит 'type' и 'description'), 
+        # пытаемся извлечь значение
+        if 'type' in data and 'description' in data:
+            # Это похоже на JSON schema описание, извлекаем description как значение
+            desc = data.get('description', '')
+            if isinstance(desc, str):
+                return desc
+            # Если description - тоже словарь, рекурсивно обрабатываем
+            return _extract_values_from_nested_dict(desc)
+        # Если есть ключ 'value', используем его
+        elif 'value' in data:
+            return _extract_values_from_nested_dict(data['value'])
+        # Рекурсивно обрабатываем все значения словаря
+        else:
+            return {k: _extract_values_from_nested_dict(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_extract_values_from_nested_dict(item) for item in data]
+    else:
+        return data
+
+def _parse_json_from_response(text: str) -> dict:
+    """Извлекает JSON из текстового ответа LLM"""
+    # Пытаемся найти JSON в ответе
+    # Ищем блоки между { и }
+    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    if json_match:
+        try:
+            parsed = json.loads(json_match.group())
+            # Извлекаем значения из вложенных структур
+            return _extract_values_from_nested_dict(parsed)
+        except json.JSONDecodeError:
+            pass
+    
+    # Если не нашли, пытаемся распарсить весь текст
+    try:
+        parsed = json.loads(text)
+        # Извлекаем значения из вложенных структур
+        return _extract_values_from_nested_dict(parsed)
+    except json.JSONDecodeError:
+        logger.warning(f"Не удалось распарсить JSON из ответа: {text[:100]}")
+        return {}
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def robust_llm_call(prompt: str, model = None, temperature: float = 0.5, structured_output: Optional[BaseModel]=None):
+    import os
+    from yandex_chain import YandexGPTModel
+    # Используем модель из конфига по умолчанию
+    if model is None:
+        model = LLM_MODEL
+    
+    # Настройка Yandex GPT
+    api_key = os.getenv("OPENAI_API_KEY")
+    folder_id = os.getenv("YANDEX_FOLDER_ID")
+    
+    # Создаем YandexLLM с folder_id только если он указан
+    llm_params = {
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature
+    }
+    if folder_id:
+        llm_params["folder_id"] = folder_id
+    
+    llm = YandexLLM(**llm_params)
+    
+    # Добавляем инструкцию для структурированного вывода
+    if structured_output:
+        # Получаем JSON схему (поддерживаем Pydantic v1 и v2)
+        try:
+            if hasattr(structured_output, 'model_json_schema'):
+                schema = structured_output.model_json_schema()  # Pydantic v2
+            elif hasattr(structured_output, 'schema'):
+                schema = structured_output.schema()  # Pydantic v1
+            else:
+                schema = {}
+            schema_json = json.dumps(schema, ensure_ascii=False, indent=2)
+        except Exception:
+            schema_json = "{}"
+        
+        enhanced_prompt = f"""{prompt}
+
+ВАЖНО: Верни ответ ТОЛЬКО в формате JSON с ПРЯМЫМИ ЗНАЧЕНИЯМИ (не схемой!).
+Пример правильного формата:
+{{"goal_description": "Текст цели", "motivation": "Текст мотивации"}}
+
+НЕПРАВИЛЬНО (не делай так):
+{{"goal_description": {{"description": "Текст", "type": "string"}}, "motivation": {{"description": "Текст", "type": "string"}}}}
+
+Схема для справки (но возвращай только значения):
+{schema_json}
+
+Ответ должен быть валидным JSON объектом с прямыми значениями полей, без дополнительного текста."""
+        response = await asyncio.to_thread(lambda: llm.invoke(enhanced_prompt))
+        response_text = _get_text_from_response(response)
+        json_data = _parse_json_from_response(response_text)
+        # Валидируем через Pydantic
+        try:
+            if hasattr(structured_output, 'model_validate'):
+                return structured_output.model_validate(json_data)  # Pydantic v2
+            else:
+                return structured_output(**json_data)  # Pydantic v1
+        except Exception as e:
+            logger.warning(f"Ошибка валидации Pydantic модели: {e}, возвращаем сырые данные")
+            return json_data
+    else:
+        response = await asyncio.to_thread(lambda: llm.invoke(prompt))
+        return _get_text_from_response(response)
 
 
 def filter_real_russian_data(evidence: Dict, df_russian_preprocessed: pd.DataFrame, sample_size: int) -> pd.DataFrame:

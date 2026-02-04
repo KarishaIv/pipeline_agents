@@ -1,0 +1,109 @@
+{
+  "timestamp": "2026-02-04T20:41:57.552322",
+  "total_respondents": 9,
+  "total_questions": 10,
+  "question_statistics": [
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением 'Я стараюсь не брать деньги в долг'",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 8.6,
+      "confidence_avg": 0.956
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Мне интересны люди и обычаи других культур",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 8.6,
+      "confidence_avg": 0.956
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я восхищаюсь людьми, которые заработали достаточно, чтобы купить дорогую машину или квартиру",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 6.7,
+      "confidence_avg": 0.744
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Меня раздражает реклама",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 6.5,
+      "confidence_avg": 0.722
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Покупка акций и ценных бумаг слишком рискованна для меня",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 7.7,
+      "confidence_avg": 0.856
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я покупаю вещи скорее удобные, чем модные",
+      "agree": 9,
+      "disagree": 0,
+      "total": 9,
+      "agree_percent": 100.0,
+      "disagree_percent": 0.0,
+      "confidence_sum": 9.0,
+      "confidence_avg": 1.0
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я хожу на работу прежде всего из-за денег",
+      "agree": 5,
+      "disagree": 4,
+      "total": 9,
+      "agree_percent": 55.56,
+      "disagree_percent": 44.44,
+      "confidence_sum": 6.6000000000000005,
+      "confidence_avg": 0.733
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я чувствую себя финансово обеспеченным(ной)",
+      "agree": 3,
+      "disagree": 6,
+      "total": 9,
+      "agree_percent": 33.33,
+      "disagree_percent": 66.67,
+      "confidence_sum": 6.0,
+      "confidence_avg": 0.667
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я доверяю информации в газетах",
+      "agree": 2,
+      "disagree": 7,
+      "total": 9,
+      "agree_percent": 22.22,
+      "disagree_percent": 77.78,
+      "confidence_sum": 6.999999999999999,
+      "confidence_avg": 0.778
+    },
+    {
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением 'Место женщины - дом'",
+      "agree": 0,
+      "disagree": 9,
+      "total": 9,
+      "agree_percent": 0.0,
+      "disagree_percent": 100.0,
+      "confidence_sum": 8.0,
+      "confidence_avg": 0.889
+    }
+  ],
+  "agent_mode": "survey",
+  "overall_agreement_percent": 71.11
+}
