@@ -9,3 +9,9 @@ __pycache__/
 .env
 .venv
 Basic PGM.ipynb
+
+# Virtual environment
+venv/
+
+# Simulation outputs
+outputs/
