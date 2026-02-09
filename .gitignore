@@ -12,3 +12,6 @@ Basic PGM.ipynb
 
 # Virtual environment
 venv/
+
+# Simulation outputs
+outputs/
