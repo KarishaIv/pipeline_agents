@@ -52,6 +52,11 @@ def train_pgm_model(model: DiscreteBayesianNetwork, df_prep: pd.DataFrame) -> Di
     ]
     
     model_data = df_prep[model_features].dropna()
+
+    columns_to_categorize = ['gender', 'marital_status', 'children_group', 'education', 'occupation', 'region', 'income_level']
+    for col in columns_to_categorize:
+        model_data[col] = model_data[col].astype('category')
+
     model.fit(model_data, estimator=MaximumLikelihoodEstimator)
     return model
 
