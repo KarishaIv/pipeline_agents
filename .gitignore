@@ -16,5 +16,7 @@ venv/
 # Simulation outputs
 outputs/
 
-# DataBase
+# Data
 qdrant_storage/
+data_4_qdrant/
+data/
