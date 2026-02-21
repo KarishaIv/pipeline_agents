@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any
 import logging 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
-from yandex_chain import YandexLLM
+from yandex_chain import YandexLLM, YandexEmbeddings
 from pydantic import BaseModel
 import re
 
@@ -362,3 +362,20 @@ def get_income_range(income: float, bins, labels) -> str:
     label = labels[-1]
     lower = int(bins[-2])
     return f"{label}: {f'{lower:,}'.replace(',', ' ')}+"
+
+def _build_embedding_model() -> YandexEmbeddings:
+    """Создаёт экземпляр YandexEmbeddings из переменных окружения."""
+    params: Dict[str, Any] = {
+        "api_key": os.getenv("OPENAI_API_KEY"),
+        "model": LLM_MODEL,
+    }
+    folder_id = os.getenv("YANDEX_FOLDER_ID")
+    if folder_id:
+        params["folder_id"] = folder_id
+    return YandexEmbeddings(**params)
+
+
+def get_embedding(text: str, query: bool = True) -> List[float]:
+    """Возвращает embedding текста (query или document) через YandexEmbeddings."""
+    model = _build_embedding_model()
+    return model.embed_query(text) if query else model.embed_document(text)

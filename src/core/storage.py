@@ -4,8 +4,13 @@ from datetime import datetime
 import asyncio
 from typing import Any, Dict, Iterable, Optional, List
 import logging
+import pandas as pd
+from pydantic.dataclasses import dataclass
+
+from src.utils import get_embedding
 
 logger = logging.getLogger(__name__)
+
 
 class StorageManager:
     """
@@ -79,6 +84,13 @@ class StorageManager:
                 "full_state": full_state,
                 "timestamp": response.get("timestamp")
             }, question_file)
+
+            await StorageManager.append_parquet_async([{
+                    "question": question,
+                    "embedding": get_embedding(question, query=False),
+                }], 
+                out_dir.parent.parent / "data_4_qdrant/questions.parquet"
+            )
             
             final_decision = full_state.get("final_decision", {})
             if isinstance(final_decision, dict):
@@ -137,3 +149,18 @@ class StorageManager:
                 "timestamp": summary["timestamp"]
             }, ensure_ascii=False)
         )
+
+    @staticmethod
+    async def append_parquet_async(data: Dict, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, StorageManager._append_parquet_sync, data, path)
+        logger.debug(f"Saved Parquet -> {path}")
+
+    @staticmethod
+    def _append_parquet_sync(data: List[Dict], path: Path):
+        new_df = pd.DataFrame(data)
+        if path.exists():
+            existing_df = pd.read_parquet(path)
+            new_df = pd.concat([existing_df, new_df], ignore_index=True)
+        new_df.to_parquet(path)
