@@ -21,3 +21,4 @@ plotly>=5.14.0
 
 pandarallel
 pyarrow
+dvc
