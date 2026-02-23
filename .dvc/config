@@ -1,0 +1,5 @@
+[core]
+    remote = yc
+['remote "yc"']
+    url = s3://diplom-storage
+    endpointurl = https://storage.yandexcloud.net

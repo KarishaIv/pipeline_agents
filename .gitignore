@@ -16,7 +16,5 @@ venv/
 # Simulation outputs
 outputs/
 
-# Data
+# Qdrant files
 qdrant_storage/
-data_4_qdrant/
-data/
