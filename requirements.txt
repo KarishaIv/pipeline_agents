@@ -24,3 +24,8 @@ pyarrow
 dvc
 dvc-s3
 qdrant_client
+openai
+langchain_community
+fastapi
+uvicorn[standard]
+langchain_qdrant
