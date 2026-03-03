@@ -1,6 +1,7 @@
+import json
 from typing import Any, Dict, List, Optional
 
-from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 
 from src.utils import get_embedding
@@ -10,20 +11,83 @@ COLLECTION_NAME = "questions"
 _qdrant = QdrantClient(url="http://localhost:6333")
 
 
-def _point_to_dict(point: Dict[str, Any]) -> Dict[str, Any]:
-    return {"id": point["id"], "score": point.get("score"), "payload": point["payload"]}
+# ---------------------------------------------------------------------------
+# Pydantic argument schemas
+# ---------------------------------------------------------------------------
+
+class SearchArgs(BaseModel):
+    query: str = Field(description="Natural-language search string")
+    limit: int = Field(default=5, description="Maximum number of results to return")
 
 
-@tool
+class FilterArgs(BaseModel):
+    field: str = Field(description='Payload field name to filter on (e.g. "question")')
+    value: str = Field(description="Expected exact value of the field")
+    limit: int = Field(default=10, description="Maximum number of results to return")
+
+
+class ScrollArgs(BaseModel):
+    limit: int = Field(default=10, description="Page size")
+    offset: Optional[int] = Field(default=None, description="Point id to start from (from previous next_offset)")
+
+
+class RetrieveArgs(BaseModel):
+    ids: List[int] = Field(description="List of integer point IDs to retrieve")
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible tool definitions
+# ---------------------------------------------------------------------------
+
+TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Semantic search over the questions collection. Embeds the query and returns the closest points by cosine similarity.",
+            "parameters": SearchArgs.model_json_schema(),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "filter_points",
+            "description": "Filter points in the questions collection by an exact payload field match.",
+            "parameters": FilterArgs.model_json_schema(),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scroll_points",
+            "description": "Paginated scroll through all points in the questions collection. Returns a page of points and the next page offset.",
+            "parameters": ScrollArgs.model_json_schema(),
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_by_id",
+            "description": "Retrieve specific points from the questions collection by their integer IDs.",
+            "parameters": RetrieveArgs.model_json_schema(),
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _point_to_dict(point) -> Dict[str, Any]:
+    return {"id": point.id, "score": getattr(point, "score", None), "payload": point.payload}
+
+
+# ---------------------------------------------------------------------------
+# Tool implementations
+# ---------------------------------------------------------------------------
+
 def search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Semantic search over the questions collection.
-
-    Embeds the query text and returns the closest points by cosine similarity.
-
-    Args:
-        query: Natural-language search string.
-        limit: Maximum number of results (default 5).
-    """
     vector = get_embedding(query)
     hits = _qdrant.search(
         collection_name=COLLECTION_NAME,
@@ -33,19 +97,7 @@ def search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     return [_point_to_dict(h) for h in hits]
 
 
-@tool
-def filter_points(
-    field: str,
-    value: str,
-    limit: int = 10,
-) -> List[Dict[str, Any]]:
-    """Filter points in the questions collection by an exact payload field match.
-
-    Args:
-        field: Payload field name to filter on (e.g. "question").
-        value: Expected value of the field.
-        limit: Maximum number of results (default 10).
-    """
+def filter_points(field: str, value: str, limit: int = 10) -> List[Dict[str, Any]]:
     results, _ = _qdrant.scroll(
         collection_name=COLLECTION_NAME,
         scroll_filter=models.Filter(
@@ -61,19 +113,7 @@ def filter_points(
     return [_point_to_dict(p) for p in results]
 
 
-@tool
-def scroll_points(
-    limit: int = 10,
-    offset: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Paginated scroll through all points in the questions collection.
-
-    Returns a page of points and the next page offset.
-
-    Args:
-        limit: Page size (default 10).
-        offset: Point id to start from (use the value returned as next_offset).
-    """
+def scroll_points(limit: int = 10, offset: Optional[int] = None) -> Dict[str, Any]:
     points, next_offset = _qdrant.scroll(
         collection_name=COLLECTION_NAME,
         limit=limit,
@@ -85,13 +125,7 @@ def scroll_points(
     }
 
 
-@tool
 def retrieve_by_id(ids: List[int]) -> List[Dict[str, Any]]:
-    """Retrieve specific points from the questions collection by their IDs.
-
-    Args:
-        ids: List of integer point IDs to retrieve.
-    """
     points = _qdrant.retrieve(
         collection_name=COLLECTION_NAME,
         ids=ids,
@@ -99,4 +133,26 @@ def retrieve_by_id(ids: List[int]) -> List[Dict[str, Any]]:
     return [_point_to_dict(p) for p in points]
 
 
-qdrant_tools = [search, filter_points, scroll_points, retrieve_by_id]
+# ---------------------------------------------------------------------------
+# Dispatcher
+# ---------------------------------------------------------------------------
+
+_REGISTRY = {
+    "search": (SearchArgs, search),
+    "filter_points": (FilterArgs, filter_points),
+    "scroll_points": (ScrollArgs, scroll_points),
+    "retrieve_by_id": (RetrieveArgs, retrieve_by_id),
+}
+
+
+def execute_tool(name: str, raw_args: dict) -> str:
+    """Validate args with the corresponding Pydantic model and call the tool."""
+    if name not in _REGISTRY:
+        return json.dumps({"error": f"Unknown tool: {name}"})
+    schema, fn = _REGISTRY[name]
+    try:
+        args = schema.model_validate(raw_args)
+        result = fn(**args.model_dump())
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
