@@ -1,4 +1,4 @@
-# Credit Decision Prediction Pipeline with Multi-Agent Simulation
+# Survey Pipeline with Multi-Agent Simulation
 
 Комплексная система для моделирования поведения российских клиентов банка при принятии решений о кредите. Использует Probabilistic Graphical Models (PGM) для генерации синтетических персон, k-NN matching для переноса личностных черт из американского датасета (Nemotron), и мультиагентную симуляцию на базе LLM для моделирования эмоций, поведения и финансовых решений.
 
