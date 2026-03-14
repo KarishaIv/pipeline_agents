@@ -163,12 +163,23 @@ class PipelineRunner:
     async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict):
         """Сохранение всех результатов пайплайна"""
         logger.info("💾 Saving pipeline results...")
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        for result in results:
+            logger.debug(f"[Run:{result['run_id']}] Сохранение результатов опроса")
+            await StorageManager.save_survey_results(
+                result, self.output_dir / f"sim_{timestamp}", datasets['survey_questions']
+            )
+            await StorageManager.save_survey_results_parquet_temp(
+                result, self.output_dir / f"sim_{timestamp}", datasets['survey_questions']
+            )
         
+        # Сохранение всех персон
         personas_path = self.output_dir / f'all_replicated_personas_{timestamp}.csv'
         all_personas.to_csv(personas_path, index=False)
         
+        # Сохранение всех персон по отдельности
         for i, persona in enumerate([all_personas.iloc[i].to_dict() for i in range(len(all_personas))]):
             await StorageManager.save_json_async(
                 persona, 
@@ -430,3 +441,106 @@ async def _process_target_audiences_parallel(
                    f"({row['unique_clusters']} кластеров) - {row['data_source']}")
     
     return all_personas, ta_summary_stats
+
+# TODO: возможно, в будущем агент должен будет уметь считать статистики как, например, здесь
+# async def _generate_survey_summary(self, results: List[Dict[str, Any]], out_dir: Path):
+#     """Генерирует сводную статистику по опросу"""
+#     logger.info("Генерация сводной статистики опроса")
+        
+#     question_stats = {}
+        
+#     for result in results:
+#         responses = result.get("survey_responses", [])
+#         for response in responses:
+#             question_text = response.get("question", "Unknown")
+#             full_state = response.get("full_state", {})
+            
+#             final_decision = full_state.get("final_decision", {})
+#             if isinstance(final_decision, dict):
+#                 agreement = final_decision.get("decision", False)
+#             else:
+#                 agreement = getattr(final_decision, "decision", False)
+                
+#             if question_text not in question_stats:
+#                 question_stats[question_text] = {
+#                     "question": question_text,
+#                     "agree": 0, 
+#                     "disagree": 0, 
+#                     "total": 0,
+#                     "agree_percent": 0.0,
+#                     "disagree_percent": 0.0,
+#                     "confidence_sum": 0.0, 
+#                     "confidence_avg": 0.0
+#                 }
+            
+#             if agreement:
+#                 question_stats[question_text]["agree"] += 1
+#             else:
+#                 question_stats[question_text]["disagree"] += 1
+                
+#             question_stats[question_text]["total"] += 1
+                
+#             if isinstance(final_decision, dict):
+#                 confidence = final_decision.get("confidence", 0.5)
+#             else:
+#                 confidence = getattr(final_decision, "confidence", 0.5)
+                
+#             question_stats[question_text]["confidence_sum"] += confidence
+        
+#     for stats in question_stats.values():
+#         total = stats["total"]
+#         if total > 0:
+#             stats["agree_percent"] = round((stats["agree"] / total) * 100, 2)
+#             stats["disagree_percent"] = round((stats["disagree"] / total) * 100, 2)
+#             stats["confidence_avg"] = round(stats["confidence_sum"] / total, 3)
+        
+#     question_stats_list = list(question_stats.values())
+#     question_stats_list.sort(key=lambda x: x["agree_percent"], reverse=True)
+        
+#     summary = {
+#         "timestamp": datetime.utcnow().isoformat(),
+#         "total_respondents": len(results),
+#         "total_questions": len(self.survey_questions),
+#         "question_statistics": question_stats_list,
+#         "overall_agreement_percent": round(
+#             sum(stats["agree"] for stats in question_stats_list) / 
+#             (sum(stats["total"] for stats in question_stats_list) or 1) * 100, 2
+#         )
+#     }
+        
+#     await StorageManager.save_json_async(summary, out_dir / "survey_summary.json")
+        
+#     simplified_stats = {}
+#     for item in question_stats_list:
+#         simplified_stats[item["question"]] = {
+#             "agree": item["agree"],
+#             "disagree": item["disagree"], 
+#             "agree_percent": item["agree_percent"],
+#             "disagree_percent": item["disagree_percent"],
+#             "confidence_avg": item["confidence_avg"]
+#         }
+        
+#     simplified_summary = {
+#         "timestamp": summary["timestamp"],
+#         "total_respondents": summary["total_respondents"],
+#         "overall_agreement_percent": summary["overall_agreement_percent"],
+#         "question_statistics": simplified_stats,
+#     }
+        
+#     await StorageManager.save_json_async(
+#         simplified_summary, 
+#         out_dir / "survey_summary_simplified.json"
+#     )
+        
+#     logger.info(f"СВОДКА ОПРОСА - {len(results)} респондентов")
+#     logger.info("=" * 80)
+#     for i, item in enumerate(question_stats_list, 1):
+#         logger.info(
+#             f"{i:2d}. {item['agree_percent']:5.1f}% согласны "
+#             f"({item['agree']:3d}/{item['total']:3d}) "
+#             f"[доверие: {item['confidence_avg']:.3f}] - "
+#             f"{item['question'][:60]}..."
+#         )
+        
+#     logger.info(f"Общее согласие: {summary['overall_agreement_percent']:.1f}%")
+#     logger.info(f"Сводка опроса сохранена: {len(results)} респондентов, {len(question_stats)} вопросов")

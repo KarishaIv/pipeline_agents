@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, Optional, List
 import logging
 import pandas as pd
 from pydantic.dataclasses import dataclass
+import uuid
 
 from src.utils import get_embedding
 
@@ -19,6 +20,7 @@ class StorageManager:
     - save_stream: дозапись логов/стримов
     - save_batch: сохраняет набор результатов агрегированно
     """
+    QUESTION_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_OID, "questions")
 
     @staticmethod
     async def save_json_async(obj: Any, path: Path, ensure_ascii: bool = False, indent: int = 2) -> None:
@@ -56,8 +58,8 @@ class StorageManager:
             logger.info(f"Saved batch {i // per_file + 1} ({len(batch)} items) -> {filename}")
 
     @staticmethod
-    async def save_survey_results(result: Dict, out_dir: Path, run_id: str, survey_questions: List[str]):
-        run_dir = out_dir / run_id
+    async def save_survey_results(result: Dict, out_dir: Path, survey_questions: List[str]):
+        run_dir = out_dir / result['run_id']
         run_dir.mkdir(parents=True, exist_ok=True)
         
         profile = result.get("profile", {})
@@ -84,13 +86,6 @@ class StorageManager:
                 "full_state": full_state,
                 "timestamp": response.get("timestamp")
             }, question_file)
-
-            await StorageManager.append_parquet_async([{
-                    "question": question,
-                    "embedding": get_embedding(question, query=False),
-                }], 
-                out_dir.parent.parent / "data_4_qdrant/questions.parquet"
-            )
             
             final_decision = full_state.get("final_decision", {})
             if isinstance(final_decision, dict):
@@ -122,7 +117,7 @@ class StorageManager:
                 disagreement_count += 1
         
         summary = {
-            "run_id": run_id,
+            "run_id": result['run_id'],
             "profile_name": profile.get("name", "unknown"),
             "persona_id": profile.get("persona_id", "unknown"),
             "total_questions": len(survey_questions),
@@ -140,7 +135,7 @@ class StorageManager:
         await StorageManager.append_line_async(
             out_dir / "survey_index.log",
             json.dumps({
-                "run_id": run_id,
+                "run_id": result['run_id'],
                 "profile_name": summary["profile_name"],
                 "persona_id": summary["persona_id"],
                 "agreement_count": agreement_count,
@@ -149,6 +144,103 @@ class StorageManager:
                 "timestamp": summary["timestamp"]
             }, ensure_ascii=False)
         )
+
+    async def save_survey_results_parquet_temp(result: Dict, out_dir: Path, survey_questions: List[str]):
+        run_dir = out_dir / result['run_id']
+        run_dir.mkdir(parents=True, exist_ok=True)
+        
+        profile = result.get("profile", {})
+        survey_responses = result.get("survey_responses", [])
+        
+        # await StorageManager.save_json_async(profile, run_dir / "profile.json")
+        
+        question_agreement = {}
+        agreement_count = 0
+        disagreement_count = 0
+        
+        for i, response in enumerate(survey_responses):
+            question = response.get("question", f"question_{i}")
+            question_index = response.get("question_index", i)
+            full_state = response.get("full_state", {})
+            
+            safe_question_name = f"question_{question_index:03d}_{question[:30].replace(' ', '_').replace('?', '')}"
+            
+            question_file = run_dir / f"{safe_question_name}_full.json"
+            # await StorageManager.save_json_async({
+            #     "question": question,
+            #     "question_index": question_index,
+            #     "profile": profile,
+            #     "full_state": full_state,
+            #     "timestamp": response.get("timestamp")
+            # }, question_file)
+
+            question_uuid = str(uuid.uuid5(StorageManager.QUESTION_NAMESPACE, question))
+            await StorageManager.append_parquet_async([{
+                    "UUID": question_uuid,
+                    "question": question,
+                    "embedding": get_embedding(question, query=False),
+                }], 
+                out_dir.parent.parent / "data_4_qdrant/questions.parquet"
+            )
+            
+            final_decision = full_state.get("final_decision", {})
+            if isinstance(final_decision, dict):
+                agreement = final_decision.get("decision", False)
+            else:
+                agreement = getattr(final_decision, "decision", False)
+            
+            simplified_state = {
+                "question": question,
+                "question_index": question_index,
+                "final_decision": final_decision,
+                "agent_histories": {
+                    "emotional": full_state.get("emotional_history", []),
+                    "rational": full_state.get("rational_history", []),
+                    "social": full_state.get("social_history", []),
+                    "ideological": full_state.get("ideological_history", [])
+                },
+                "generation_count": full_state.get("generation_count", 0),
+                "timestamp": response.get("timestamp")
+            }
+            
+            simplified_file = run_dir / f"{safe_question_name}_simplified.json"
+            # await StorageManager.save_json_async(simplified_state, simplified_file)
+            
+            question_agreement[question] = "AGREE" if agreement else "DISAGREE"
+            if agreement:
+                agreement_count += 1
+            else:
+                disagreement_count += 1
+        
+        summary = {
+            "run_id": result['run_id'],
+            "profile_name": profile.get("name", "unknown"),
+            "persona_id": profile.get("persona_id", "unknown"),
+            "total_questions": len(survey_questions),
+            "agreement_count": agreement_count,
+            "disagreement_count": disagreement_count,
+            "agreement_percent": round((agreement_count / len(survey_questions) * 100), 2) if survey_questions else 0,
+            "question_agreement": question_agreement,
+            "questions_by_index": [{"index": i, "question": q, "agreement": question_agreement.get(q, "UNKNOWN")} 
+                                  for i, q in enumerate(survey_questions)],
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # await StorageManager.save_json_async(summary, run_dir / "survey_summary.json")
+        
+        # await StorageManager.append_line_async(
+        #     out_dir / "survey_index.log",
+        #     json.dumps({
+        #         "run_id": result['run_id'],
+        #         "profile_name": summary["profile_name"],
+        #         "persona_id": summary["persona_id"],
+        #         "agreement_count": agreement_count,
+        #         "disagreement_count": disagreement_count,
+        #         "agreement_percent": summary["agreement_percent"],
+        #         "timestamp": summary["timestamp"]
+        #     }, ensure_ascii=False)
+        # )
+
 
     @staticmethod
     async def append_parquet_async(data: Dict, path: Path) -> None:
