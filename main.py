@@ -23,7 +23,7 @@ def setup_logging():
 def parse_arguments():
     """Парсинг аргументов командной строки"""
     parser = argparse.ArgumentParser(
-        description='Credit Decision Prediction Pipeline with Multi-Agent Simulation'
+        description='Survey Pipeline with Multi-Agent Simulation'
     )
     
     parser.add_argument('--evidence', type=str, default='./data/evidence.json',
@@ -44,9 +44,6 @@ def parse_arguments():
                         help='Timeout per persona simulation (seconds)')
     parser.add_argument('--ta_concurrency', type=int, default=1,
                         help='Number of parallel target audience processing')
-    parser.add_argument('--agent_mode', type=str, default='credit', 
-                        choices=['credit', 'survey'],
-                        help="Agent simulation mode")
     parser.add_argument('--use_pgm', action='store_true',  default=True,
                         help='Use PGM for synthetic data generation (default: True)')
     parser.add_argument('--no-pgm', action='store_false', dest='use_pgm',
@@ -73,7 +70,6 @@ def main():
         'concurrency': args.concurrency,
         'timeout': args.timeout,
         'ta_concurrency': args.ta_concurrency,
-        'agent_mode': args.agent_mode,
         'use_pgm': args.use_pgm,
         "ocean_flag": args.oceanflag,
     }
