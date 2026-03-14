@@ -51,22 +51,6 @@ class StorageManager:
             logger.info(f"Saved batch {i // per_file + 1} ({len(batch)} items) -> {filename}")
 
     @staticmethod
-    async def save_result_stream(result: Dict, out_dir: Path, run_id: str):
-        run_dir = out_dir / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        await StorageManager.save_json_async(result, run_dir / "full_run.json")
-
-        summary = {
-            "run_id": run_id,
-            "profile_name": result.get("profile", {}).get("name"),
-            "final_decision": result.get("decision", {}).get("will_take_credit") if isinstance(result.get("decision"), dict) else None,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        await StorageManager.append_line_async(out_dir / "runs_index.log", json.dumps(summary, ensure_ascii=False))
-
-
-    @staticmethod
     async def save_survey_results(result: Dict, out_dir: Path, run_id: str, survey_questions: List[str]):
         run_dir = out_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)

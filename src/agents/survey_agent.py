@@ -823,7 +823,7 @@ async def main():
     """Главная функция для CLI"""
     
     parser = argparse.ArgumentParser(
-        description='Credit Decision Prediction Pipeline with Multi-Agent Simulation'
+        description='Survey Pipeline with Multi-Agent Simulation'
     )
     
     parser.add_argument(
