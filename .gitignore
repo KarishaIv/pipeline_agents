@@ -1,29 +1,18 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.so
-.Python
+# Python
 .venv/
 venv/
-env/
-*.egg-info/
+__pycache__/
+*.pyc
 
-# --- IDE ---
+# IDE
 .idea/
 .vscode/
-*.swp
-*.swo
 
-# --- Secrets & Env ---
+# Secrets
 .env
 *.key
-config_local.py
 
-# --- Cache & DB (тяжёлые/генерируемые) ---
-multi_agent_rag/cache/
-multi_agent_rag/chroma_db/
-multi_agent_rag/qdrant_data/
-multi_agent_rag/outputs/
+# Heavy files
 *.sqlite
 *.sqlite3
 *.bin
@@ -31,7 +20,8 @@ multi_agent_rag/outputs/
 *.dll
 *.so
 
-# --- Logs ---
-*.log
-logs/
-.DS_Store
+# Cache & DB folders
+multi_agent_rag/cache/
+multi_agent_rag/chroma_db/
+multi_agent_rag/qdrant_data/
+multi_agent_rag/outputs/
