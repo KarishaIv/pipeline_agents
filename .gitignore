@@ -1,17 +1,37 @@
+# --- Python ---
 __pycache__/
-.ipynb_checkpoints/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- IDE ---
+.idea/
+.vscode/
 *.swp
 *.swo
-.DS_Store
+
+# --- Secrets & Env ---
 .env
-.venv
-Basic PGM.ipynb
+*.key
+config_local.py
 
-# Virtual environment
-venv/
+# --- Cache & DB (тяжёлые/генерируемые) ---
+multi_agent_rag/cache/
+multi_agent_rag/chroma_db/
+multi_agent_rag/qdrant_data/
+multi_agent_rag/outputs/
+*.sqlite
+*.sqlite3
+*.bin
+*.dylib
+*.dll
+*.so
 
-# Simulation outputs
-outputs/
+# --- Logs ---
+*.log
+logs/
+.DS_Store
