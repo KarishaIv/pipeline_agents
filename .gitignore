@@ -15,3 +15,11 @@ venv/
 
 # Simulation outputs
 outputs/
+
+# RAG / Telegram: не коммитить дампы, parquet из prep и Telethon-сессии
+telegram_data_last_day/
+rag_docs.parquet
+*.session
+
+# Локальная БД Qdrant (storage.sqlite часто >100MB — не для GitHub)
+qdrant_data/

@@ -143,7 +143,7 @@ def build_posts_df(source_folder: str) -> pd.DataFrame:
         return df
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df = df.sort_values("date")
+    df = df.sort_values("date", ascending=False)
     return df
 
 
@@ -231,8 +231,8 @@ def save_jsonl(df_rag: pd.DataFrame, output_jsonl: str) -> None:
 
 def prepare_telegram_rag(
     source_folder: str,
-    output_jsonl: str = "rag_docs.jsonl",
-    output_parquet: str = "",
+    output_parquet: str = "rag_docs.parquet",
+    output_jsonl: str = "",
 ) -> pd.DataFrame:
     posts = build_posts_df(source_folder)
     rag = build_rag_docs(posts)
@@ -242,5 +242,5 @@ def prepare_telegram_rag(
 
 
 if __name__ == "__main__":
-    prepare_telegram_rag("telegram_data")
+    prepare_telegram_rag("telegram_data_last_day")
 

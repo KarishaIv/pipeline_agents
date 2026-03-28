@@ -78,6 +78,24 @@ def set_openai_api_key(api_key: str, folder_id: str = None):
     else:
         os.environ["YANDEX_FOLDER_ID"] = api_key
 
+
+def set_hf_token(token: str) -> None:
+    """
+    Прокинуть токен Hugging Face в окружение (huggingface_hub, sentence-transformers).
+    Дублирует в HF_TOKEN и HUGGING_FACE_HUB_TOKEN для совместимости с библиотеками.
+    """
+    if not token or not str(token).strip():
+        return
+    t = str(token).strip()
+    os.environ["HF_TOKEN"] = t
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = t
+
+
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+if HF_TOKEN:
+    set_hf_token(HF_TOKEN)
+
+
 GMM_CONFIG = {'n_components': 1,        
     'min_components': 3,           # минимальное количество кластеров для auto
     'max_components': 3,           # максимальное количество кластеров для auto
