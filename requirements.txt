@@ -18,6 +18,8 @@ python-dotenv>=1.0.0
 scipy>=1.9.0
 tenacity>=8.2.0
 plotly>=5.14.0
+qdrant-client>=1.9.0
+telethon>=1.36.0
 
-pandarallel
-pyarrow
+pandarallel>=1.6.5
+pyarrow>=14.0.0

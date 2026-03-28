@@ -1,98 +1,155 @@
+import argparse
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+import os
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
 from telethon import TelegramClient
 from telethon.tl.functions.messages import GetHistoryRequest
 
-api_id = секрет
-api_hash = 'секрет'
-session_name = 'multi_channel_session'
-#phone:телефон
 
-# Каналы для парсинга: {юзернейм: (лимит, часы_назад)}
-channels_config = {
-    '@bbbreaking': (10000, 336),
-    '@mash': (10000, 336),
-    '@interfaxonline': (10000, 336),
-    '@tass_agency': (10000, 336),
-    '@vedomosti': (10000, 336),
-    '@rian_ru': (10000, 336),
-    '@gazetaru': (10000, 336),
-    '@izvestia': (10000, 336),
-    '@gosuslugi': (10000, 336),
-    '@bbcrussian': (10000, 336),
-    '@kommersant': (10000, 336),
-    '@rt_russian': (10000, 336),
-
-    '@moscowach': (10000, 336),
-    '@spb_smi': (10000, 336),
-    '@ngs_news': (10000, 336),
-    '@kazan': (10000, 336),
-    '@podslushano_chat52': (10000, 336),
-    '@news_74ru': (10000, 336),
-    '@yug_24_ru': (10000, 336),
-    '@samara_smi': (10000, 336),
-
-    '@alfabank': (10000, 336),
-    '@alfa_investments': (10000, 336),
-    '@sberbank': (10000, 336),
-    '@SberInvestments': (10000, 336),
-    '@bankvtb': (10000, 336),
-    '@centralbank_russia': (10000, 336),
-    '@tbank': (10000, 336),
-    '@gazprombank': (10000, 336),
-
-    '@russianmacro': (10000, 336),
-    '@ecworld': (10000, 336),
-    '@ecworldtech': (10000, 336),
-    '@economika': (10000, 336),
-    '@visual_capitalist_rus': (10000, 336),
-    '@Econsonline': (10000, 336),
-
-    '@MoscowExchangeOfficial': (10000, 336),
-    '@cbonds': (10000, 336),
-    '@dohod': (10000, 336),
-    '@Bonds_lab': (10000, 336),
-    '@russianjunkbonds': (10000, 336),
-
-    '@smartlabnews': (10000, 336),
-    '@investfundsru': (10000, 336),
-    '@CFA_RF': (10000, 336),
-    '@tb_invest_official': (10000, 336),
-    '@investnique': (10000, 336),
-    '@minec_russia': (10000, 336),
-    '@banksta': (10000, 336),
-    '@ex_fin': (10000, 336),
-
-    '@bitkogan': (10000, 336),
-    '@d_code': (10000, 336),
-
-    '@rusipoteka': (10000, 336),
-    '@ipotekahouse': (10000, 336),
-    '@regcik': (10000, 336),
-    '@ipotekacenter': (10000, 336),
-    '@cian_official': (10000, 336),
-
-    '@sovcomrates_msk': (10000, 336),
-    '@sberometer_kurs': (10000, 336),
-
-    '@steamrub': (10000, 336),
-}
+def _require_env(name: str) -> str:
+    val = os.getenv(name)
+    if not val:
+        raise SystemExit(f"Missing env var: {name}")
+    return val
 
 
-output_dir = Path(f"telegram_data_{datetime.now().strftime('%Y-%m-%d_%H-%M')}")
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Parse multiple Telegram channels to JSON files")
+    p.add_argument(
+        "--day",
+        default=None,
+        help='Which local day to fetch (YYYY-MM-DD). Default: yesterday in your local timezone.',
+    )
+    p.add_argument(
+        "--mode",
+        choices=["day", "hours"],
+        default="day",
+        help='Fetch mode: "day" (default) or "hours".',
+    )
+    p.add_argument(
+        "--hours-back",
+        type=int,
+        default=24,
+        help='How many hours back to fetch when --mode=hours (default: 24).',
+    )
+    p.add_argument("--limit", type=int, default=10000, help="Max posts per channel (default: 10000)")
+    p.add_argument(
+        "--output-prefix",
+        default="telegram_data",
+        help="Output directory prefix (default: telegram_data)",
+    )
+    p.add_argument(
+        "--session",
+        default=os.getenv("TELEGRAM_SESSION", "multi_channel_session"),
+        help="Telethon session name/file (default: TELEGRAM_SESSION or multi_channel_session)",
+    )
+    return p.parse_args()
+
+# Каналы для парсинга
+CHANNELS = [
+    "@bbbreaking",
+    "@mash",
+    "@interfaxonline",
+    "@tass_agency",
+    "@vedomosti",
+    "@rian_ru",
+    "@gazetaru",
+    "@izvestia",
+    "@gosuslugi",
+    "@bbcrussian",
+    "@kommersant",
+    "@rt_russian",
+    "@moscowach",
+    "@spb_smi",
+    "@ngs_news",
+    "@kazan",
+    "@podslushano_chat52",
+    "@news_74ru",
+    "@yug_24_ru",
+    "@samara_smi",
+    "@alfabank",
+    "@alfa_investments",
+    "@sberbank",
+    "@SberInvestments",
+    "@bankvtb",
+    "@centralbank_russia",
+    "@tbank",
+    "@gazprombank",
+    "@russianmacro",
+    "@ecworld",
+    "@ecworldtech",
+    "@economika",
+    "@visual_capitalist_rus",
+    "@Econsonline",
+    "@MoscowExchangeOfficial",
+    "@cbonds",
+    "@dohod",
+    "@Bonds_lab",
+    "@russianjunkbonds",
+    "@smartlabnews",
+    "@investfundsru",
+    "@CFA_RF",
+    "@tb_invest_official",
+    "@investnique",
+    "@minec_russia",
+    "@banksta",
+    "@ex_fin",
+    "@bitkogan",
+    "@d_code",
+    "@rusipoteka",
+    "@ipotekahouse",
+    "@regcik",
+    "@ipotekacenter",
+    "@cian_official",
+    "@sovcomrates_msk",
+    "@sberometer_kurs",
+    "@steamrub",
+]
+
+
+ARGS = _parse_args()
+
+api_id = int(_require_env("TELEGRAM_API_ID"))
+api_hash = _require_env("TELEGRAM_API_HASH")
+session_name = ARGS.session
+
+output_dir = Path(f"{ARGS.output_prefix}_last_day")
 output_dir.mkdir(exist_ok=True)
-print(f'Папка для сохранения: {output_dir}\n')
+print(f"Папка для сохранения: {output_dir}\n")
+
+
+def _day_window_utc(target_day: date) -> tuple[datetime, datetime]:
+    """
+    Возвращает (start_utc, end_utc) для локальных суток target_day.
+    Telethon отдаёт msg.date как timezone-aware UTC.
+    """
+    local_tz = datetime.now().astimezone().tzinfo
+    start_local = datetime.combine(target_day, datetime.min.time(), tzinfo=local_tz)
+    end_local = start_local + timedelta(days=1)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _resolve_target_day() -> date:
+    local_today = datetime.now().astimezone().date()
+    if ARGS.day:
+        return date.fromisoformat(ARGS.day)
+    return local_today - timedelta(days=1)
 
 
 # асинхронный парсинг
-async def parse_channel(client, channel, limit, hours_back):
+async def parse_channel(client, channel, limit, hours_back, *, mode: str, day_start_utc: datetime | None, day_end_utc: datetime | None):
     min_date = datetime.now(timezone.utc) - timedelta(hours=hours_back)
     messages = []
     offset_id = 0
 
-    print(f'Сбор {channel} (посты за {hours_back}ч)')
+    if mode == "day":
+        assert day_start_utc and day_end_utc
+        print(f"Сбор {channel} (посты за день, UTC окно {day_start_utc.isoformat()}..{day_end_utc.isoformat()})")
+    else:
+        print(f'Сбор {channel} (посты за {hours_back}ч)')
 
     while len(messages) < limit:
         batch = await client(GetHistoryRequest(
@@ -110,9 +167,16 @@ async def parse_channel(client, channel, limit, hours_back):
             break
 
         for msg in batch.messages:
-            if msg.date < min_date:
-                print(f'{channel}: достигнута дата {min_date.strftime("%Y-%m-%d")}')
-                return messages
+            if mode == "day":
+                # Пропускаем более новые (сегодняшние) и останавливаемся, когда ушли старше нужных суток.
+                if msg.date >= day_end_utc: 
+                    continue
+                if msg.date < day_start_utc:  
+                    return messages
+            else:
+                if msg.date < min_date:
+                    print(f'{channel}: достигнута дата {min_date.strftime("%Y-%m-%d")}')
+                    return messages
 
             messages.append({
                 'id': msg.id,
@@ -129,7 +193,6 @@ async def parse_channel(client, channel, limit, hours_back):
     return messages
 
 
-# основная функция
 async def main():
     async with TelegramClient(session_name, api_id, api_hash) as client:
         if not await client.is_user_authorized():
@@ -137,14 +200,27 @@ async def main():
             await client.start()
             print('Сессия сохранена\n')
 
+        day_start_utc = day_end_utc = None
+        if ARGS.mode == "day":
+            target_day = _resolve_target_day()
+            day_start_utc, day_end_utc = _day_window_utc(target_day)
+
         tasks = [
-            parse_channel(client, ch, lim, hours)
-            for ch, (lim, hours) in channels_config.items()
+            parse_channel(
+                client,
+                ch,
+                ARGS.limit,
+                ARGS.hours_back,
+                mode=ARGS.mode,
+                day_start_utc=day_start_utc,
+                day_end_utc=day_end_utc,
+            )
+            for ch in CHANNELS
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         total = 0
-        for (channel, _), res in zip(channels_config.items(), results):
+        for channel, res in zip(CHANNELS, results):
             if isinstance(res, Exception):
                 print(f'Ошибка при парсинге {channel}: {res}')
                 continue
@@ -158,7 +234,7 @@ async def main():
             total += len(res)
             print(f'{channel}: {len(res)} постов в {filepath.name}')
 
-        print(f'\n Итого собрано: {total} постов из {len(channels_config)} каналов в папке {output_dir}')
+        print(f'\n Итого собрано: {total} постов из {len(CHANNELS)} каналов в папке {output_dir}')
 
 
 if __name__ == '__main__':
