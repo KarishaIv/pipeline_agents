@@ -75,7 +75,6 @@ CHANNEL_MAPPING = {
 
 
 # --- АГЕНТЫ ---
-# Требуемые агенты: макроэкономика, банки, валюта, недвижимость, новости социальные
 CURRENCY_CHANNELS = {
     'sovcomrates_msk',
     'sberometer_kurs',
@@ -150,7 +149,7 @@ def build_posts_df(source_folder: str) -> pd.DataFrame:
 def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
     """
     Преобразует посты в RAG-таблицу:
-    - doc_id: стабильный id документа
+    - doc_id:  id документа
     - text: полный текст новости/поста
     - metadata_json: метаданные одной строкой (удобно хранить в Parquet)
     - agent/category/date/channel/... в отдельных колонках для фильтров
@@ -243,4 +242,3 @@ def prepare_telegram_rag(
 
 if __name__ == "__main__":
     prepare_telegram_rag("telegram_data_last_day")
-

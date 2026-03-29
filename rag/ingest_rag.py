@@ -3,10 +3,9 @@
 делает upsert по стабильному doc_id.
 
 Когда запускать:
-  - После rag/prep_rag.py: во входе  rag_docs.parquet .
+  - После rag/prep_rag.py: во входе  rag_docs.parquet 
   - Повторно — каждый день/порцию: тот же скрипт без --recreate: новые точки добавятся,
-    уже существующие doc_id перезапишутся.
-
+    уже существующие doc_id перезапишутся
 """
 
 import argparse
@@ -29,7 +28,6 @@ E5_DOC_PREFIX = "passage: "
 
 
 def load_jsonl(path: str) -> Generator[dict, None, None]:
-    """Читает JSONL, выдаёт по одному dict на строку."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Файл не найден: {path}")
@@ -45,7 +43,6 @@ _embedding_model = None
 
 
 def _build_embedding_model() -> SentenceTransformer:
-    """Создаёт singleton локальной embedding-модели."""
     global _embedding_model
     if _embedding_model is None:
         _embedding_model = SentenceTransformer(EMBEDDING_MODEL)
@@ -53,20 +50,17 @@ def _build_embedding_model() -> SentenceTransformer:
 
 
 def get_document_embeddings(texts: list) -> list:
-    """Возвращает embeddings для списка документов."""
     model = _build_embedding_model()
     prefixed = [E5_DOC_PREFIX + text for text in texts]
     return model.encode(prefixed, show_progress_bar=False).tolist()
 
 
 def get_vector_size() -> int:
-    """Определяет размер вектора модели."""
     model = _build_embedding_model()
     return model.get_sentence_embedding_dimension()
 
 
 def create_collection(client: QdrantClient, collection_name: str, vector_size: int, recreate: bool = False):
-    """Создаёт коллекцию в Qdrant (при recreate удаляет существующую)."""
     if recreate:
         try:
             client.delete_collection(collection_name)
@@ -90,17 +84,12 @@ def create_collection(client: QdrantClient, collection_name: str, vector_size: i
 
 
 def _make_qdrant_client(local: bool = False, storage_path: str = "qdrant_data", host: str = "localhost", port: int = 6333):
-    """Создаёт клиент: локальное хранилище (без Docker) или подключение к серверу."""
     if local:
         return QdrantClient(path=storage_path)
     return QdrantClient(host=host, port=port)
 
 
 def _make_point_id(doc_id: str):
-    """
-    Для локального Qdrant используем UUID/int id.
-    Делаем стабильный UUID из исходного doc_id, чтобы upsert был детерминированным.
-    """
     return str(uuid.uuid5(uuid.NAMESPACE_URL, doc_id))
 
 
@@ -133,7 +122,6 @@ def _prune_by_payload_date(
     collection_name: str,
     older_than_days: int,
 ) -> None:
-    """Удаляет точки, у которых payload `date` (ISO-строка из prep_rag) старше порога."""
     if older_than_days <= 0:
         return
     cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
@@ -157,10 +145,6 @@ def ingest(
     recreate_collection: bool = False,
     prune_older_than_days: int = 60,
 ):
-    """
-    Читает parquet/jsonl, считает эмбеддинги, upsert в Qdrant.
-    При local=True хранилище в папке storage_path (Docker не нужен).
-    """
     print("Чтение документов...")
     docs = _load_docs(input_path)
     if not docs:
