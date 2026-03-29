@@ -17,34 +17,34 @@ def _require_env(name: str) -> str:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Parse multiple Telegram channels to JSON files")
+    p = argparse.ArgumentParser(description="Парсинг нескольких Telegram-каналов в JSON")
     p.add_argument(
         "--day",
         default=None,
-        help='Which local day to fetch (YYYY-MM-DD). Default: yesterday in your local timezone.',
+        help="День YYYY-MM-DD; по умолчанию — вчера",
     )
     p.add_argument(
         "--mode",
         choices=["day", "hours"],
         default="day",
-        help='Fetch mode: "day" (default) or "hours".',
+        help='Режим: day или hours',
     )
     p.add_argument(
         "--hours-back",
         type=int,
         default=24,
-        help='How many hours back to fetch when --mode=hours (default: 24).',
+        help="Сколько часов назад при --mode=hours (по умолчанию 24)",
     )
-    p.add_argument("--limit", type=int, default=10000, help="Max posts per channel (default: 10000)")
+    p.add_argument("--limit", type=int, default=10000, help="Макс. постов на канал (по умолчанию 10000)")
     p.add_argument(
         "--output-prefix",
         default="telegram_data",
-        help="Output directory prefix (default: telegram_data)",
+        help="Префикс папки вывода (по умолчанию telegram_data)",
     )
     p.add_argument(
         "--session",
         default=os.getenv("TELEGRAM_SESSION", "multi_channel_session"),
-        help="Telethon session name/file (default: TELEGRAM_SESSION or multi_channel_session)",
+        help="Имя сессии Telethon (env TELEGRAM_SESSION, иначе multi_channel_session)",
     )
     return p.parse_args()
 
@@ -123,8 +123,8 @@ print(f"Папка для сохранения: {output_dir}\n")
 
 def _day_window_utc(target_day: date) -> tuple[datetime, datetime]:
     """
-    Возвращает (start_utc, end_utc) для локальных суток target_day.
-    Telethon отдаёт msg.date как timezone-aware UTC.
+    Возвращает (start_utc, end_utc) для локальных суток target_day
+    Telethon отдаёт msg.date как timezone-aware UTC
     """
     local_tz = datetime.now().astimezone().tzinfo
     start_local = datetime.combine(target_day, datetime.min.time(), tzinfo=local_tz)
@@ -139,7 +139,6 @@ def _resolve_target_day() -> date:
     return local_today - timedelta(days=1)
 
 
-# асинхронный парсинг
 async def parse_channel(client, channel, limit, hours_back, *, mode: str, day_start_utc: datetime | None, day_end_utc: datetime | None):
     min_date = datetime.now(timezone.utc) - timedelta(hours=hours_back)
     messages = []
@@ -168,7 +167,6 @@ async def parse_channel(client, channel, limit, hours_back, *, mode: str, day_st
 
         for msg in batch.messages:
             if mode == "day":
-                # Пропускаем более новые (сегодняшние) и останавливаемся, когда ушли старше нужных суток.
                 if msg.date >= day_end_utc: 
                     continue
                 if msg.date < day_start_utc:  

@@ -5,20 +5,16 @@
   Локальная БД в папке qdrant_data:
     python3 rag/search_rag.py "льготная ипотека и ставки" --local --agent real_estate --top-k 8
 
-  Другие агенты (поле payload agent из prep_rag):
-    python3 rag/search_rag.py "ключевая ставка инфляция" --local --agent macroeconomy
-    python3 rag/search_rag.py "дивиденды Сбер" --local --agent banks
-    python3 rag/search_rag.py "курс доллара" --local --agent currency
-    python3 rag/search_rag.py "что в регионах" --local --agent social_news
+  Другие агенты:
+    python3 rag/search_rag.py "кредит" --local --agent banks
 
-  Окно по дате шире / без фильтра по дате:
+  Окно по дате:
     python3 rag/search_rag.py "ипотека" --local --agent real_estate --window-days 30
-    python3 rag/search_rag.py "ипотека" --local --window-days 0
 
   Qdrant на localhost:6333 (без --local):
-    python3 rag/search_rag.py "курс юаня" --host localhost --port 6333 --agent currency
+    python3 rag/search_rag.py "курс доллара" --host localhost --port 6333 --agent currency
 
-  Отключить бонус за свежесть (по умолчанию он включён, вес 0.15):
+  Отключить бонус за свежесть:
     python3 rag/search_rag.py "новости рынка" --local --no-prefer-recent
 """
 
@@ -41,7 +37,6 @@ _embedding_model = None
 
 
 def _build_embedding_model() -> SentenceTransformer:
-    """Создаёт singleton локальной embedding-модели."""
     global _embedding_model
     if _embedding_model is None:
         _embedding_model = SentenceTransformer(EMBEDDING_MODEL)
@@ -49,7 +44,6 @@ def _build_embedding_model() -> SentenceTransformer:
 
 
 def get_embedding(text: str, query: bool = True) -> list:
-    """Возвращает embedding текста для query или document."""
     model = _build_embedding_model()
     prefix = E5_QUERY_PREFIX if query else ""
     return model.encode([prefix + text], show_progress_bar=False).tolist()[0]
@@ -83,16 +77,6 @@ def search(
     prefer_recent: bool = True,
     recency_weight: float = 0.15,
 ):
-    """
-    Семантический поиск по коллекции Qdrant.
-
-    query — текст запроса (например: "курс доллара", "ипотека").
-    agent — опциональный фильтр: только документы для этого агента
-            (macroeconomy, banks, currency, real_estate, social_news).
-    local=True и storage_path — те же, что при ingest_rag.py --local.
-
-    Возвращает список dict: [{"id", "text", "metadata", "score"}, ...].
-    """
     q_vec = get_embedding(query, query=True)
 
     if local:
@@ -100,7 +84,6 @@ def search(
     else:
         client = QdrantClient(host=qdrant_host, port=qdrant_port)
 
-    # Фильтр по агенту и окну дат
     must_conditions = []
     if agent:
         must_conditions.append(FieldCondition(key="agent", match=MatchValue(value=agent)))
@@ -136,7 +119,7 @@ def search(
             "score": hit.score,
         })
 
-    # Свежесть: только переранжирование кандидатов; берём время из payload["date"] 
+    # Свежесть
         for r in out:
             r["_date_unix"] = _parse_iso_to_ts(r["metadata"].get("date"))
 
