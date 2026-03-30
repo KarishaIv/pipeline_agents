@@ -7,6 +7,7 @@ torch>=2.0.0
 transformers>=4.30.0
 tqdm>=4.65.0
 huggingface_hub>=0.17.0
+sentence-transformers>=2.2.2
 langchain>=0.1.0
 #langchain-openai>=0.0.2
 langchain-core>=0.1.0
