@@ -16,7 +16,7 @@ CHANNEL_MAPPING = {
     'Econsonline': 'MACRO_OFFICIAL',
     'gosuslugi': 'MACRO_OFFICIAL',
 
-    # 2. NEWS_SOCIAL: Общий фон, Паника, Регионы (То, что читает народ)
+    # 2. NEWS_SOCIAL: Общий фон, Паника, Регионы 
     'mash': 'NEWS_SOCIAL',
     'interfaxonline': 'NEWS_SOCIAL',
     'tass_agency': 'NEWS_SOCIAL',
@@ -37,7 +37,7 @@ CHANNEL_MAPPING = {
     'yug_24_ru': 'NEWS_SOCIAL',
     'samara_smi': 'NEWS_SOCIAL',
 
-    # 3. FINANCE_MARKETS: Банки, Биржа, Инвестиции, Валюта (То, что читают инвесторы)
+    # 3. FINANCE_MARKETS: Банки, Биржа, Инвестиции, Валюта
     # Банки
     'alfabank': 'FINANCE_MARKETS',
     'sberbank': 'FINANCE_MARKETS',
@@ -75,7 +75,6 @@ CHANNEL_MAPPING = {
 
 
 # --- АГЕНТЫ ---
-# Требуемые агенты: макроэкономика, банки, валюта, недвижимость, новости социальные
 CURRENCY_CHANNELS = {
     'sovcomrates_msk',
     'sberometer_kurs',
@@ -148,13 +147,6 @@ def build_posts_df(source_folder: str) -> pd.DataFrame:
 
 
 def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Преобразует посты в RAG-таблицу:
-    - doc_id: стабильный id документа
-    - text: полный текст новости/поста
-    - metadata_json: метаданные одной строкой (удобно хранить в Parquet)
-    - agent/category/date/channel/... в отдельных колонках для фильтров
-    """
     if df.empty:
         return pd.DataFrame(columns=[
             "doc_id", "text", "metadata_json",
@@ -213,6 +205,7 @@ def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
 def save_parquet(df: pd.DataFrame, output_parquet: str) -> None:
     if not output_parquet:
         return
+    print(f"Saving to {output_parquet}")
     df.to_parquet(output_parquet, index=False)
 
 
@@ -243,4 +236,3 @@ def prepare_telegram_rag(
 
 if __name__ == "__main__":
     prepare_telegram_rag("telegram_data_last_day")
-
