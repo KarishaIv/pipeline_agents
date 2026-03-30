@@ -1,12 +1,13 @@
 import argparse
 import asyncio
 import json
+import logging
 import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from telethon import TelegramClient
-from telethon.tl.functions.messages import GetHistoryRequest
+from telethon.errors import ChannelPrivateError, FloodWaitError
 
 
 def _require_env(name: str) -> str:
@@ -35,6 +36,12 @@ def _parse_args() -> argparse.Namespace:
         default=24,
         help='How many hours back to fetch when --mode=hours (default: 24).',
     )
+    p.add_argument(
+        "--days-back",
+        type=int,
+        default=None,
+        help="Convenience: days back to fetch when --mode=hours (overrides --hours-back). Example: 30",
+    )
     p.add_argument("--limit", type=int, default=10000, help="Max posts per channel (default: 10000)")
     p.add_argument(
         "--output-prefix",
@@ -46,7 +53,20 @@ def _parse_args() -> argparse.Namespace:
         default=os.getenv("TELEGRAM_SESSION", "multi_channel_session"),
         help="Telethon session name/file (default: TELEGRAM_SESSION or multi_channel_session)",
     )
+    p.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=2,
+        help="Сколько каналов опрашивать одновременно (default: 2, меньше — мягче к лимитам Telegram).",
+    )
+    p.add_argument(
+        "--batch-sleep",
+        type=float,
+        default=1.5,
+        help="Пауза (сек) между запросами страниц истории одного канала (default: 1.5).",
+    )
     return p.parse_args()
+
 
 # Каналы для парсинга
 CHANNELS = [
@@ -116,16 +136,31 @@ api_id = int(_require_env("TELEGRAM_API_ID"))
 api_hash = _require_env("TELEGRAM_API_HASH")
 session_name = ARGS.session
 
-output_dir = Path(f"{ARGS.output_prefix}_last_day")
+if ARGS.mode == "day":
+    out_suffix = "last_day"
+else:
+    hours_back = int(ARGS.days_back * 24) if ARGS.days_back is not None else int(ARGS.hours_back)
+    out_suffix = f"last_{int((hours_back + 23) // 24)}_days"
+
+output_dir = Path(f"{ARGS.output_prefix}_{out_suffix}")
 output_dir.mkdir(exist_ok=True)
-print(f"Папка для сохранения: {output_dir}\n")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+logging.info("Папка для сохранения: %s", output_dir)
+logging.info(
+    "Ограничение параллелизма: %s канал(ов), пауза между страницами: %ss",
+    ARGS.max_concurrent,
+    ARGS.batch_sleep,
+)
+
+_semaphore = asyncio.Semaphore(ARGS.max_concurrent)
 
 
 def _day_window_utc(target_day: date) -> tuple[datetime, datetime]:
-    """
-    Возвращает (start_utc, end_utc) для локальных суток target_day.
-    Telethon отдаёт msg.date как timezone-aware UTC.
-    """
+    """(start_utc, end_utc) для локальных суток target_day."""
     local_tz = datetime.now().astimezone().tzinfo
     start_local = datetime.combine(target_day, datetime.min.time(), tzinfo=local_tz)
     end_local = start_local + timedelta(days=1)
@@ -139,68 +174,104 @@ def _resolve_target_day() -> date:
     return local_today - timedelta(days=1)
 
 
-# асинхронный парсинг
-async def parse_channel(client, channel, limit, hours_back, *, mode: str, day_start_utc: datetime | None, day_end_utc: datetime | None):
-    min_date = datetime.now(timezone.utc) - timedelta(hours=hours_back)
-    messages = []
-    offset_id = 0
+async def parse_channel(
+    client: TelegramClient,
+    channel: str,
+    limit: int,
+    hours_back: int,
+    *,
+    mode: str,
+    day_start_utc: datetime | None,
+    day_end_utc: datetime | None,
+) -> list:
+    async with _semaphore:
+        min_date = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+        messages: list = []
+        offset_id = 0
 
-    if mode == "day":
-        assert day_start_utc and day_end_utc
-        print(f"Сбор {channel} (посты за день, UTC окно {day_start_utc.isoformat()}..{day_end_utc.isoformat()})")
-    else:
-        print(f'Сбор {channel} (посты за {hours_back}ч)')
+        if mode == "day":
+            assert day_start_utc is not None and day_end_utc is not None
+            logging.info(
+                "Начало сбора %s (день, UTC %s .. %s)",
+                channel,
+                day_start_utc.isoformat(),
+                day_end_utc.isoformat(),
+            )
+        else:
+            logging.info("Начало сбора %s (посты за %s ч)", channel, hours_back)
 
-    while len(messages) < limit:
-        batch = await client(GetHistoryRequest(
-            peer=channel,
-            limit=100,
-            offset_date=None,
-            offset_id=offset_id,
-            max_id=0,
-            min_id=0,
-            add_offset=0,
-            hash=0
-        ))
-
-        if not batch.messages:
-            break
-
-        for msg in batch.messages:
-            if mode == "day":
-                # Пропускаем более новые (сегодняшние) и останавливаемся, когда ушли старше нужных суток.
-                if msg.date >= day_end_utc: 
+        try:
+            while len(messages) < limit:
+                try:
+                    page = min(100, limit - len(messages))
+                    batch = await client.get_messages(
+                        channel,
+                        limit=page,
+                        offset_id=offset_id,
+                        max_id=0,
+                    )
+                except FloodWaitError as e:
+                    wait = min(e.seconds, 300)
+                    logging.warning("FloodWait на %s: %ss, ждём", channel, wait)
+                    await asyncio.sleep(wait)
                     continue
-                if msg.date < day_start_utc:  
-                    return messages
-            else:
-                if msg.date < min_date:
-                    print(f'{channel}: достигнута дата {min_date.strftime("%Y-%m-%d")}')
-                    return messages
 
-            messages.append({
-                'id': msg.id,
-                'date': str(msg.date),
-                'text': getattr(msg, 'message', '') or '',
-                'views': getattr(msg, 'views', None),
-                'channel': channel
-            })
-            offset_id = msg.id
+                if not batch:
+                    break
 
-        if len(batch.messages) < 100:
-            break
+                for msg in batch:
+                    if not msg.date:
+                        continue
 
-    return messages
+                    if mode == "day":
+                        if msg.date >= day_end_utc:
+                            continue
+                        if msg.date < day_start_utc:
+                            logging.info("%s: достигнута нижняя граница окна дня", channel)
+                            return messages
+                    else:
+                        if msg.date < min_date:
+                            logging.info("%s: достигнута нижняя граница по времени", channel)
+                            return messages
+
+                    messages.append(
+                        {
+                            "id": msg.id,
+                            "date": str(msg.date),
+                            "text": getattr(msg, "message", "") or "",
+                            "views": getattr(msg, "views", None),
+                            "channel": channel,
+                        }
+                    )
+
+                if len(batch) < page:
+                    break
+
+                offset_id = batch[-1].id
+                await asyncio.sleep(ARGS.batch_sleep)
+
+            logging.info("%s: собрано %s постов", channel, len(messages))
+            return messages
+
+        except ChannelPrivateError:
+            logging.error("%s: приватный канал или доступ закрыт", channel)
+            return []
+        except Exception as e:
+            logging.error("Ошибка при парсинге %s: %s", channel, e)
+            return []
 
 
-async def main():
+async def main() -> None:
     async with TelegramClient(session_name, api_id, api_hash) as client:
         if not await client.is_user_authorized():
-            print('Требуется авторизация. Введите код из Telegram...')
+            logging.info("Требуется авторизация. Введите код из Telegram...")
             await client.start()
-            print('Сессия сохранена\n')
+            logging.info("Сессия сохранена")
 
         day_start_utc = day_end_utc = None
+        effective_hours_back = (
+            int(ARGS.days_back * 24) if ARGS.days_back is not None else int(ARGS.hours_back)
+        )
         if ARGS.mode == "day":
             target_day = _resolve_target_day()
             day_start_utc, day_end_utc = _day_window_utc(target_day)
@@ -210,7 +281,7 @@ async def main():
                 client,
                 ch,
                 ARGS.limit,
-                ARGS.hours_back,
+                effective_hours_back,
                 mode=ARGS.mode,
                 day_start_utc=day_start_utc,
                 day_end_utc=day_end_utc,
@@ -222,20 +293,24 @@ async def main():
         total = 0
         for channel, res in zip(CHANNELS, results):
             if isinstance(res, Exception):
-                print(f'Ошибка при парсинге {channel}: {res}')
+                logging.error("Критическая ошибка %s: %s", channel, res)
                 continue
 
-            clean_name = channel.lstrip('@').replace('/', '_')
+            clean_name = channel.lstrip("@").replace("/", "_")
             filepath = output_dir / f"{clean_name}.json"
-
-            with open(filepath, 'w', encoding='utf-8') as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(res, f, ensure_ascii=False, indent=2)
 
             total += len(res)
-            print(f'{channel}: {len(res)} постов в {filepath.name}')
+            logging.info("%s: %s постов → %s", channel, len(res), filepath.name)
 
-        print(f'\n Итого собрано: {total} постов из {len(CHANNELS)} каналов в папке {output_dir}')
+        logging.info(
+            "Итого: %s постов из %s каналов в %s",
+            total,
+            len(CHANNELS),
+            output_dir,
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
