@@ -132,7 +132,7 @@ def main():
     parser.add_argument("--storage-path", default="qdrant_data", help="Папка при --local")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=6333)
-    parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--top-k", type=int, default=15)
     parser.add_argument("--agent", default=None, help="Фильтр: macroeconomy, banks, currency, real_estate, social_news")
     parser.add_argument("--window-days", type=int, default=14, help="Искать только в окне последних N дней (0 = без фильтра)")
     parser.add_argument(
