@@ -5,9 +5,6 @@
   Локальная БД в папке qdrant_data:
     python3 rag/search_rag.py "льготная ипотека и ставки" --local --agent real_estate --top-k 8
 
-  Другие агенты:
-    python3 rag/search_rag.py "кредит" --local --agent banks
-
   Окно по дате:
     python3 rag/search_rag.py "ипотека" --local --agent real_estate --window-days 30
 
@@ -28,25 +25,10 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.models import DatetimeRange, Filter, FieldCondition, MatchValue
-from sentence_transformers import SentenceTransformer
+from e5_embeddings import get_query_embedding
 
 
 EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
-E5_QUERY_PREFIX = "query: "
-_embedding_model = None
-
-
-def _build_embedding_model() -> SentenceTransformer:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    return _embedding_model
-
-
-def get_embedding(text: str, query: bool = True) -> list:
-    model = _build_embedding_model()
-    prefix = E5_QUERY_PREFIX if query else ""
-    return model.encode([prefix + text], show_progress_bar=False).tolist()[0]
 
 
 def _parse_iso_to_ts(val) -> Optional[int]:
@@ -77,7 +59,7 @@ def search(
     prefer_recent: bool = True,
     recency_weight: float = 0.15,
 ):
-    q_vec = get_embedding(query, query=True)
+    q_vec = get_query_embedding(query)
 
     if local:
         client = QdrantClient(path=storage_path)
@@ -93,7 +75,6 @@ def search(
 
     query_filter = Filter(must=must_conditions) if must_conditions else None
 
-    # Берём кандидатов чуть больше, чтобы потом можно было отранжировать по свежести.
     candidate_k = top_k * 5 if prefer_recent else top_k
     try:
         response = client.query_points(
@@ -120,6 +101,7 @@ def search(
         })
 
     # Свежесть
+    if prefer_recent and out:
         for r in out:
             r["_date_unix"] = _parse_iso_to_ts(r["metadata"].get("date"))
 
