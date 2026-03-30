@@ -22,53 +22,52 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--day",
         default=None,
-        help='Which local day to fetch (YYYY-MM-DD). Default: yesterday in your local timezone.',
+        help="День YYYY-MM-DD (по умолчанию: вчера).",
     )
     p.add_argument(
         "--mode",
         choices=["day", "hours"],
         default="day",
-        help='Fetch mode: "day" (default) or "hours".',
+        help='Режим: "day" или "hours"',
     )
     p.add_argument(
         "--hours-back",
         type=int,
         default=24,
-        help='How many hours back to fetch when --mode=hours (default: 24).',
+        help='Сколько часов назад (для --mode=hours)',
     )
     p.add_argument(
         "--days-back",
         type=int,
         default=None,
-        help="Convenience: days back to fetch when --mode=hours (overrides --hours-back). Example: 30",
+        help="Сколько дней назад (для --mode=hours)",
     )
-    p.add_argument("--limit", type=int, default=10000, help="Max posts per channel (default: 10000)")
+    p.add_argument("--limit", type=int, default=10000, help="Макс. постов на канал")
     p.add_argument(
         "--output-prefix",
         default="telegram_data",
-        help="Output directory prefix (default: telegram_data)",
+        help="Префикс папки вывода",
     )
     p.add_argument(
         "--session",
         default=os.getenv("TELEGRAM_SESSION", "multi_channel_session"),
-        help="Telethon session name/file (default: TELEGRAM_SESSION or multi_channel_session)",
+        help="Имя сессии Telethon",
     )
     p.add_argument(
         "--max-concurrent",
         type=int,
         default=2,
-        help="Сколько каналов опрашивать одновременно (default: 2, меньше — мягче к лимитам Telegram).",
+        help="Параллельных каналов",
     )
     p.add_argument(
         "--batch-sleep",
         type=float,
         default=1.5,
-        help="Пауза (сек) между запросами страниц истории одного канала (default: 1.5).",
+        help="Пауза между страницами (сек)",
     )
     return p.parse_args()
 
 
-# Каналы для парсинга
 CHANNELS = [
     "@bbbreaking",
     "@mash",
@@ -145,22 +144,18 @@ else:
 output_dir = Path(f"{ARGS.output_prefix}_{out_suffix}")
 output_dir.mkdir(exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logging.info("Папка для сохранения: %s", output_dir)
-logging.info(
-    "Ограничение параллелизма: %s канал(ов), пауза между страницами: %ss",
-    ARGS.max_concurrent,
-    ARGS.batch_sleep,
-)
+logging.info("max_concurrent=%s batch_sleep=%ss", ARGS.max_concurrent, ARGS.batch_sleep)
 
 _semaphore = asyncio.Semaphore(ARGS.max_concurrent)
 
 
 def _day_window_utc(target_day: date) -> tuple[datetime, datetime]:
-    """(start_utc, end_utc) для локальных суток target_day."""
+    """
+    Возвращает (start_utc, end_utc) для локальных суток target_day.
+    Telethon отдаёт msg.date как timezone-aware UTC.
+    """
     local_tz = datetime.now().astimezone().tzinfo
     start_local = datetime.combine(target_day, datetime.min.time(), tzinfo=local_tz)
     end_local = start_local + timedelta(days=1)
@@ -191,14 +186,9 @@ async def parse_channel(
 
         if mode == "day":
             assert day_start_utc is not None and day_end_utc is not None
-            logging.info(
-                "Начало сбора %s (день, UTC %s .. %s)",
-                channel,
-                day_start_utc.isoformat(),
-                day_end_utc.isoformat(),
-            )
+            logging.info("Начало сбора %s (day UTC %s..%s)", channel, day_start_utc, day_end_utc)
         else:
-            logging.info("Начало сбора %s (посты за %s ч)", channel, hours_back)
+            logging.info("Начало сбора %s (hours_back=%s)", channel, hours_back)
 
         try:
             while len(messages) < limit:
@@ -212,7 +202,7 @@ async def parse_channel(
                     )
                 except FloodWaitError as e:
                     wait = min(e.seconds, 300)
-                    logging.warning("FloodWait на %s: %ss, ждём", channel, wait)
+                    logging.warning("FloodWait на %s: %ss", channel, wait)
                     await asyncio.sleep(wait)
                     continue
 
@@ -227,11 +217,9 @@ async def parse_channel(
                         if msg.date >= day_end_utc:
                             continue
                         if msg.date < day_start_utc:
-                            logging.info("%s: достигнута нижняя граница окна дня", channel)
                             return messages
                     else:
                         if msg.date < min_date:
-                            logging.info("%s: достигнута нижняя граница по времени", channel)
                             return messages
 
                     messages.append(
@@ -269,9 +257,7 @@ async def main() -> None:
             logging.info("Сессия сохранена")
 
         day_start_utc = day_end_utc = None
-        effective_hours_back = (
-            int(ARGS.days_back * 24) if ARGS.days_back is not None else int(ARGS.hours_back)
-        )
+        effective_hours_back = int(ARGS.days_back * 24) if ARGS.days_back is not None else int(ARGS.hours_back)
         if ARGS.mode == "day":
             target_day = _resolve_target_day()
             day_start_utc, day_end_utc = _day_window_utc(target_day)
@@ -304,12 +290,7 @@ async def main() -> None:
             total += len(res)
             logging.info("%s: %s постов → %s", channel, len(res), filepath.name)
 
-        logging.info(
-            "Итого: %s постов из %s каналов в %s",
-            total,
-            len(CHANNELS),
-            output_dir,
-        )
+        logging.info("Итого: %s постов из %s каналов в %s", total, len(CHANNELS), output_dir)
 
 
 if __name__ == "__main__":

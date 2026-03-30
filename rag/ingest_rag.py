@@ -13,13 +13,13 @@ import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.models import DatetimeRange, Distance, FieldCondition, Filter, PointStruct, VectorParams
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+
+from e5_embeddings import get_document_embeddings, get_vector_size
 
 
 BATCH_SIZE = 64
 EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
-E5_DOC_PREFIX = "passage: "
 
 
 def load_jsonl(path: str) -> Generator[dict, None, None]:
@@ -32,27 +32,6 @@ def load_jsonl(path: str) -> Generator[dict, None, None]:
             if not line:
                 continue
             yield json.loads(line)
-
-
-_embedding_model = None
-
-
-def _build_embedding_model() -> SentenceTransformer:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    return _embedding_model
-
-
-def get_document_embeddings(texts: list) -> list:
-    model = _build_embedding_model()
-    prefixed = [E5_DOC_PREFIX + text for text in texts]
-    return model.encode(prefixed, show_progress_bar=False).tolist()
-
-
-def get_vector_size() -> int:
-    model = _build_embedding_model()
-    return model.get_sentence_embedding_dimension()
 
 
 def create_collection(client: QdrantClient, collection_name: str, vector_size: int, recreate: bool = False):
