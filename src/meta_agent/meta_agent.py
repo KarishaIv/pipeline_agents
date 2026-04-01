@@ -14,7 +14,7 @@ FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "")
 MODEL_URI = f"gpt://{FOLDER_ID}/yandexgpt/latest"
 
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv("YANDEX_API_KEY"),
     base_url="https://llm.api.cloud.yandex.net/v1",
 )
 

@@ -2,55 +2,113 @@
 
 import logging
 from pathlib import Path
-from typing import List
-
+from typing import List, Optional
+import numpy as np
 import pandas as pd
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import Distance, VectorParams
+import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
+DATA_DIR = Path("data_4_qdrant")
 
-def create_simple_collection_from_parquet(
+COLLECTIONS = [
+    {
+        "name": "questions",
+        "parquet": "questions.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["embedding"],
+        "payload_keys": ["question"],
+    },
+    {
+        "name": "personas",
+        "parquet": "personas.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["embedding"],
+        "payload_keys": ["region", "age_group", "education", "income_level", "marital_status", "gender", "children_group", "occupation","cluster_id", "group_key", "n_americans_in_group", "n_clusters_total", "openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism", "cluster_weight", "target_audience_id", "target_audience_name", "data_source"],
+    },
+    {
+        "name": "target_audiences",
+        "parquet": "target_audiences.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["embedding"],
+        "payload_keys": None,
+    },
+    {
+        "name": "simulations",
+        "parquet": "simulations.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["emotional_vector", "rational_vector", "social_vector", "ideological_vector", "decision_vector", "general_vector"],
+        "payload_keys": None,
+    },
+]
+
+
+def create_collection_from_parquet(
     client: QdrantClient,
     collection_name: str,
     parquet_path: Path,
-    payload_keys: List[str] = ["text"],
+    index_column: str = "UUID",
+    payload_keys: List[str] = [],
+    vector_keys: List[str] = ["embedding"],
     distance: Distance = Distance.COSINE,
-) -> None:
-    """Создаёт простую коллекцию из parquet файла."""
+) -> int:
+    """Создаёт коллекцию из parquet файла с именованными векторами."""
     if client.collection_exists(collection_name):
         client.delete_collection(collection_name)
 
     df = pd.read_parquet(parquet_path)
+    vectors_config = {
+        key: VectorParams(size=len(df.iloc[0][key]), distance=distance)
+        for key in vector_keys
+    }
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=VectorParams(size=df.iloc[0]["embedding"].shape[0], distance=distance),
+        vectors_config=vectors_config,
     )
 
-    for index, row in df.iterrows():
-        client.upsert(
-            collection_name=collection_name,
-            points=[
-                models.PointStruct(
-                    id=index,
-                    vector=row["embedding"],
-                    payload={key: row[key] for key in payload_keys},
-                ),
-            ]
-        )
+    client.upsert(
+        collection_name=collection_name,
+        points=[
+            models.PointStruct(
+                id=row[index_column],
+                vector={k: row[k].tolist() for k in vector_keys},
+                payload={k: row[k].tolist() if isinstance(row[k], np.ndarray) else row[k] for k in payload_keys},
+            )
+            for _, row in df.iterrows()
+        ],
+    )
+
+    return df.shape[0]
 
 
 def init_qdrant() -> QdrantClient:
     """Подключается к Qdrant и создаёт коллекции из локальных parquet-файлов."""
-    client = QdrantClient(url="http://localhost:6333")
+    client = QdrantClient(host="localhost", port=6333)
 
-    create_simple_collection_from_parquet(
-        client=client,
-        collection_name="questions",
-        parquet_path=Path("data_4_qdrant/questions.parquet"),
-        payload_keys=["question"],
-    )
+    for collection in COLLECTIONS:
+        parquet_path = DATA_DIR / collection["parquet"]
+        if not parquet_path.exists():
+            logger.warning(f"Skipping {collection['name']}: {parquet_path} not found")
+            continue
+
+        if collection["payload_keys"] is None:
+            collection["payload_keys"] = list(
+                set(pq.read_schema(parquet_path).names)
+                - set(collection["vector_keys"])
+                - set([collection["index_column"]])
+            )
+
+        points_count = create_collection_from_parquet(
+            client=client,
+            collection_name=collection["name"],
+            parquet_path=parquet_path,
+            index_column=collection["index_column"],
+            vector_keys=collection["vector_keys"],
+            payload_keys=collection["payload_keys"],
+        )
+        logger.info(f"Created collection '{collection['name']}' ({points_count} points)")
 
     return client
 

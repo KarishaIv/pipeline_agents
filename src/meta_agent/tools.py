@@ -6,9 +6,10 @@ from qdrant_client import QdrantClient, models
 
 from src.utils import get_embedding
 
-COLLECTION_NAME = "questions"
+AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations"]
+COLLECTION_ENUM_DESC = "Collection name: " + ", ".join(AVAILABLE_COLLECTIONS)
 
-_qdrant = QdrantClient(url="http://localhost:6333")
+_qdrant = QdrantClient(host="localhost", port=6333)
 
 
 # ---------------------------------------------------------------------------
@@ -16,22 +17,35 @@ _qdrant = QdrantClient(url="http://localhost:6333")
 # ---------------------------------------------------------------------------
 
 class SearchArgs(BaseModel):
+    collection: str = Field(description=COLLECTION_ENUM_DESC)
     query: str = Field(description="Natural-language search string")
-    limit: int = Field(default=5, description="Maximum number of results to return")
+    vector_name: str = Field(
+        default="embedding",
+        description=(
+            "Named vector to search against. "
+            "questions/personas/target_audiences use 'embedding'. "
+            "simulations uses: emotional_vector, rational_vector, "
+            "social_vector, ideological_vector, decision_vector, general_vector"
+        ),
+    )
+    limit: int = Field(default=5, description="Maximum number of results")
 
 
 class FilterArgs(BaseModel):
-    field: str = Field(description='Payload field name to filter on (e.g. "question")')
+    collection: str = Field(description=COLLECTION_ENUM_DESC)
+    field: str = Field(description='Payload field name to filter on (e.g. "question", "name")')
     value: str = Field(description="Expected exact value of the field")
-    limit: int = Field(default=10, description="Maximum number of results to return")
+    limit: int = Field(default=10, description="Maximum number of results")
 
 
 class ScrollArgs(BaseModel):
+    collection: str = Field(description=COLLECTION_ENUM_DESC)
     limit: int = Field(default=10, description="Page size")
     offset: Optional[int] = Field(default=None, description="Point id to start from (from previous next_offset)")
 
 
 class RetrieveArgs(BaseModel):
+    collection: str = Field(description=COLLECTION_ENUM_DESC)
     ids: List[int] = Field(description="List of integer point IDs to retrieve")
 
 
@@ -44,7 +58,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search",
-            "description": "Semantic search over the questions collection. Embeds the query and returns the closest points by cosine similarity.",
+            "description": (
+                "Semantic search over a Qdrant collection. "
+                "Embeds the query and returns the closest points by cosine similarity. "
+                f"Available collections: {', '.join(AVAILABLE_COLLECTIONS)}."
+            ),
             "parameters": SearchArgs.model_json_schema(),
         },
     },
@@ -52,7 +70,10 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "filter_points",
-            "description": "Filter points in the questions collection by an exact payload field match.",
+            "description": (
+                "Filter points in a Qdrant collection by an exact payload field match. "
+                f"Available collections: {', '.join(AVAILABLE_COLLECTIONS)}."
+            ),
             "parameters": FilterArgs.model_json_schema(),
         },
     },
@@ -60,7 +81,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "scroll_points",
-            "description": "Paginated scroll through all points in the questions collection. Returns a page of points and the next page offset.",
+            "description": (
+                "Paginated scroll through all points in a Qdrant collection. "
+                "Returns a page of points and the next page offset. "
+                f"Available collections: {', '.join(AVAILABLE_COLLECTIONS)}."
+            ),
             "parameters": ScrollArgs.model_json_schema(),
         },
     },
@@ -68,7 +93,10 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "retrieve_by_id",
-            "description": "Retrieve specific points from the questions collection by their integer IDs.",
+            "description": (
+                "Retrieve specific points from a Qdrant collection by their integer IDs. "
+                f"Available collections: {', '.join(AVAILABLE_COLLECTIONS)}."
+            ),
             "parameters": RetrieveArgs.model_json_schema(),
         },
     },
@@ -87,19 +115,19 @@ def _point_to_dict(point) -> Dict[str, Any]:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-def search(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+def search(collection: str, query: str, vector_name: str = "embedding", limit: int = 5) -> List[Dict[str, Any]]:
     vector = get_embedding(query)
     hits = _qdrant.search(
-        collection_name=COLLECTION_NAME,
-        query_vector=vector,
+        collection_name=collection,
+        query_vector=models.NamedVector(name=vector_name, vector=vector),
         limit=limit,
     )
     return [_point_to_dict(h) for h in hits]
 
 
-def filter_points(field: str, value: str, limit: int = 10) -> List[Dict[str, Any]]:
+def filter_points(collection: str, field: str, value: str, limit: int = 10) -> List[Dict[str, Any]]:
     results, _ = _qdrant.scroll(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection,
         scroll_filter=models.Filter(
             must=[
                 models.FieldCondition(
@@ -113,9 +141,9 @@ def filter_points(field: str, value: str, limit: int = 10) -> List[Dict[str, Any
     return [_point_to_dict(p) for p in results]
 
 
-def scroll_points(limit: int = 10, offset: Optional[int] = None) -> Dict[str, Any]:
+def scroll_points(collection: str, limit: int = 10, offset: Optional[int] = None) -> Dict[str, Any]:
     points, next_offset = _qdrant.scroll(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection,
         limit=limit,
         offset=offset,
     )
@@ -125,9 +153,9 @@ def scroll_points(limit: int = 10, offset: Optional[int] = None) -> Dict[str, An
     }
 
 
-def retrieve_by_id(ids: List[int]) -> List[Dict[str, Any]]:
+def retrieve_by_id(collection: str, ids: List[int]) -> List[Dict[str, Any]]:
     points = _qdrant.retrieve(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection,
         ids=ids,
     )
     return [_point_to_dict(p) for p in points]

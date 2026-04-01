@@ -19,13 +19,13 @@
 
 ### Базовый запуск
 ```bash
-python main.py --api_key YOUR_OPENAI_API_KEY
+python main.py --api_key YOUR_YANDEX_API_KEY
 ```
 
 ### Полный запуск с параметрами
 ```bash
 python main.py \
-  --api_key YOUR_OPENAI_API_KEY \
+  --api_key YOUR_YANDEX_API_KEY \
   --evidence data/evidence.json \
   --synthetic_size 100 \
   --nemo_size 5000 \

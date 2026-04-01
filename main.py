@@ -31,7 +31,7 @@ def parse_arguments():
     parser.add_argument('--api_key', type=str, required=True, 
                         help='Yandex GPT API key')
     parser.add_argument('--folder_id', type=str, default=None,
-                        help='Yandex Cloud Folder ID (if not provided, will use api_key)')
+                        help='Yandex Cloud Folder ID')
     parser.add_argument('--nemo_size', type=int, default=DEFAULT_NEMO_SIZE,
                         help='Size of Nemotron dataset to use')
     parser.add_argument('--output', type=str, default='outputs/',
@@ -60,7 +60,7 @@ def main():
     args = parse_arguments()
     
     setup_logging()
-    set_openai_api_key(args.api_key, args.folder_id)
+    set_yandex_credentials(args.api_key, args.folder_id)
     
     pipeline_config = {
         'evidence': args.evidence,

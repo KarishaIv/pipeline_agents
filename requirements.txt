@@ -29,3 +29,4 @@ langchain_community
 fastapi
 uvicorn[standard]
 langchain_qdrant
+uuid6

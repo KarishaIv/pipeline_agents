@@ -1,5 +1,6 @@
 [core]
     remote = yc
+    autostage = true
 ['remote "yc"']
     url = s3://diplom-storage
     endpointurl = https://storage.yandexcloud.net
