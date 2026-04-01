@@ -15,11 +15,11 @@ from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.models import DatetimeRange, Distance, FieldCondition, Filter, PointStruct, VectorParams
 from tqdm import tqdm
 
-from e5_embeddings import get_document_embeddings, get_vector_size
+from rag.e5_embeddings import get_document_embeddings, get_vector_size
 
 
 BATCH_SIZE = 64
-EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-large"
 
 
 def load_jsonl(path: str) -> Generator[dict, None, None]:
@@ -110,7 +110,7 @@ def _prune_by_payload_date(
 
 def ingest(
     input_path: str = "rag_docs.parquet",
-    collection_name: str = "telegram_news",
+    collection_name: str = "telegram_news_e5_large",
     qdrant_host: str = "localhost",
     qdrant_port: int = 6333,
     local: bool = False,
@@ -177,7 +177,7 @@ def ingest(
 def main():
     parser = argparse.ArgumentParser(description="Загрузка rag_docs в Qdrant (инкрементально через upsert)")
     parser.add_argument("--input", default="rag_docs.parquet", help="Путь к .parquet или .jsonl")
-    parser.add_argument("--collection", default="telegram_news", help="Имя коллекции Qdrant")
+    parser.add_argument("--collection", default="telegram_news_e5_large", help="Имя коллекции Qdrant")
     parser.add_argument("--local", action="store_true", help="Локальное хранилище в папке (Docker не нужен)")
     parser.add_argument("--storage-path", default="qdrant_data", help="Папка при --local")
     parser.add_argument("--host", default="localhost", help="Хост Qdrant (если не --local)")

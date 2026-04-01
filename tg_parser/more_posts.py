@@ -98,8 +98,6 @@ CHANNELS = [
     "@tbank",
     "@gazprombank",
     "@russianmacro",
-    "@ecworld",
-    "@ecworldtech",
     "@economika",
     "@visual_capitalist_rus",
     "@Econsonline",

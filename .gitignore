@@ -1,25 +1,45 @@
-__pycache__/
-.ipynb_checkpoints/
-*.pyc
-*.pyo
-*.pyd
-*.swp
-*.swo
-.DS_Store
-.env
-.venv
-Basic PGM.ipynb
-
-# Virtual environment
+# Python
+.venv/
 venv/
+__pycache__/
+*.pyc
+
+# Local caches
+.cache/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Secrets
+.env
+*.key
+
+# Heavy files
+*.sqlite
+*.sqlite3
+*.bin
+*.dylib
+*.dll
+*.so
+*.zip
 
 # Simulation outputs
 outputs/
 
 # RAG / Telegram: не коммитить дампы, parquet из prep и Telethon-сессии
 telegram_data_last_day/
+telegram_data_last_30_days/
 rag_docs.parquet
 *.session
 
-# Локальная БД Qdrant (storage.sqlite часто >100MB — не для GitHub)
 qdrant_data/
+
+# Cache & DB folders
+multi_agent_rag/cache/
+multi_agent_rag/chroma_db/
+multi_agent_rag/qdrant_data/
+multi_agent_rag/outputs/

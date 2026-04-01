@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -9,8 +10,6 @@ CHANNEL_MAPPING = {
     'centralbank_russia': 'MACRO_OFFICIAL',
     'minec_russia': 'MACRO_OFFICIAL',
     'russianmacro': 'MACRO_OFFICIAL',
-    'ecworld': 'MACRO_OFFICIAL',
-    'ecworldtech': 'MACRO_OFFICIAL',
     'economika': 'MACRO_OFFICIAL',
     'visual_capitalist_rus': 'MACRO_OFFICIAL',
     'Econsonline': 'MACRO_OFFICIAL',
@@ -97,8 +96,57 @@ def agent_for_channel(channel_name: str, category: str) -> str:
 
 
 def _is_ad(text: str) -> bool:
-    t = text.lower()
-    return ("erid:" in t) or ("#реклама" in t)
+    t = (text or "").lower()
+
+    if ("erid:" in t) or ("#реклама" in t) or ("#advert" in t):
+        return True
+
+    return False
+
+
+def _strip_promo_footer(text: str) -> str:
+    """
+    Убирает типовые промо/контактные строки в конце поста.
+    """
+    if not text:
+        return ""
+
+    lines = [ln.rstrip() for ln in str(text).splitlines()]
+    if not lines:
+        return ""
+
+    bad_line_res = [
+        re.compile(r"(?i)\bрекламный\s+отдел\b"),
+        re.compile(r"(?i)\bпо\s+вопросам\s+рекламы\b"),
+        re.compile(r"(?i)\bразмещени[ея]\s+реклам[ыы]\b"),
+        re.compile(r"(?i)\bсотрудничеств[оа]\b"),
+        re.compile(r"(?i)\bпрайс\b"),
+        re.compile(r"(?i)\bпромокод\b"),
+        re.compile(r"(?i)\bподпис(ывайся|ись|аться)\b"),
+        re.compile(r"(?i)\bнаш(и)?\s+канал(ы)?\b"),
+        re.compile(r"(?i)\bканалы\s+регионов\b"),
+        re.compile(r"(?i)@manager[_-]?pr\b"),
+    ]
+
+    def is_bad_line(ln: str) -> bool:
+        s = (ln or "").strip()
+        if not s:
+            return True  
+        if "max.ru/" in s.lower() and ("подпиш" in s.lower() or "канал" in s.lower()):
+            return True
+        return any(rx.search(s) for rx in bad_line_res)
+
+    i = len(lines) - 1
+    removed = 0
+    while i >= 0 and removed < 12:  
+        if is_bad_line(lines[i]):
+            removed += 1
+            i -= 1
+            continue
+        break
+
+    cleaned = "\n".join(lines[: i + 1]).strip()
+    return cleaned
 
 
 def build_posts_df(source_folder: str) -> pd.DataFrame:
@@ -124,7 +172,12 @@ def build_posts_df(source_folder: str) -> pd.DataFrame:
             text = str(post.get('text', '') or '').strip()
             if not text:
                 continue
+
             if _is_ad(text):
+                continue
+
+            text = _strip_promo_footer(text)
+            if not text:
                 continue
 
             all_posts.append({
