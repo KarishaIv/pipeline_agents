@@ -5,6 +5,16 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+
+def _as_int_views(val: Any) -> int:
+    if val is None or pd.isna(val):
+        return 0
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 0
+
+
 CHANNEL_MAPPING = {
     # 1. MACRO_OFFICIAL: Фундаментальные данные, ЦБ, Министерства
     'centralbank_russia': 'MACRO_OFFICIAL',
@@ -207,6 +217,8 @@ def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
         ])
 
     out = df.copy()
+    if "views" in out.columns:
+        out["views"] = pd.to_numeric(out["views"], errors="coerce").fillna(0)
 
     def make_doc_id(row: pd.Series) -> str:
         post_id = row.get("post_id")
@@ -232,7 +244,7 @@ def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
             "category": row.get("category"),
             "agent": row.get("agent"),
             "date": row.get("_date_iso"),
-            "views": int(row.get("views", 0) or 0),
+            "views": _as_int_views(row.get("views")),
             "post_id": row.get("post_id"),
         }
         return json.dumps(meta, ensure_ascii=False)

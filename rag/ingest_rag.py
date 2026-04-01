@@ -5,10 +5,15 @@
 
 import argparse
 import json
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
 import uuid
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException

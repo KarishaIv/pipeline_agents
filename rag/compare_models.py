@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 DEFAULT_TRIPLES = [
     ("intfloat/multilingual-e5-small", "telegram_news_e5_small"),
@@ -152,8 +155,8 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = out_dir / f"compare_models_{ts}.json"
-    md_path = out_dir / f"compare_models_{ts}.md"
+    json_path = out_dir / f"compare_models.json"
+    md_path = out_dir / f"compare_models.md"
 
     prefer_recent = not args.no_prefer_recent
 
