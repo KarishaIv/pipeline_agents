@@ -1,19 +1,17 @@
 """
-RAG-система с использованием Qdrant (локальный режим).
-Интеграция через search_rag.py от Карина.
+RAG-система с использованием Qdrant (локальный режим)
 """
 
 from typing import Dict, List
 from multi_agent_rag.config import CATEGORY_SLUG
 
-# Используем актуальный поиск из папки rag/
 from rag.search_rag import search as qdrant_search
 
 
 class RAGSystem:
     """RAG-система с использованием Qdrant (локальный режим)"""
 
-    def __init__(self, collection_name: str = "telegram_news", local: bool = True):
+    def __init__(self, collection_name: str = "telegram_news_e5_large", local: bool = True):
         self.collection_name = collection_name
         self.local = local
         self.storage_path = "qdrant_data"

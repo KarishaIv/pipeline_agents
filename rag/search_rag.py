@@ -18,6 +18,10 @@
 import sys
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import argparse
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -25,10 +29,10 @@ from typing import Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.models import DatetimeRange, Filter, FieldCondition, MatchValue
-from e5_embeddings import get_query_embedding
+from rag.e5_embeddings import get_query_embedding
 
 
-EMBEDDING_MODEL = "intfloat/multilingual-e5-base"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-large"
 
 
 def _parse_iso_to_ts(val) -> Optional[int]:
@@ -48,7 +52,7 @@ def _parse_iso_to_ts(val) -> Optional[int]:
 
 def search(
     query: str,
-    collection_name: str = "telegram_news",
+    collection_name: str = "telegram_news_e5_large",
     qdrant_host: str = "localhost",
     qdrant_port: int = 6333,
     local: bool = False,
@@ -127,7 +131,7 @@ def search(
 def main():
     parser = argparse.ArgumentParser(description="Поиск по RAG (Qdrant)")
     parser.add_argument("query", nargs="+", help="Текст запроса в кавычках, например: \"курс доллара\"")
-    parser.add_argument("--collection", default="telegram_news")
+    parser.add_argument("--collection", default="telegram_news_e5_large")
     parser.add_argument("--local", action="store_true", help="Локальное хранилище (как при ingest_rag.py --local)")
     parser.add_argument("--storage-path", default="qdrant_data", help="Папка при --local")
     parser.add_argument("--host", default="localhost")

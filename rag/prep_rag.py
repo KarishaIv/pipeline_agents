@@ -1,8 +1,18 @@
 import os
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+
+def _as_int_views(val: Any) -> int:
+    if val is None or pd.isna(val):
+        return 0
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 0
+
 
 CHANNEL_MAPPING = {
     # 1. MACRO_OFFICIAL: Фундаментальные данные, ЦБ, Министерства
@@ -97,8 +107,57 @@ def agent_for_channel(channel_name: str, category: str) -> str:
 
 
 def _is_ad(text: str) -> bool:
-    t = text.lower()
-    return ("erid:" in t) or ("#реклама" in t)
+    t = (text or "").lower()
+
+    if ("erid:" in t) or ("#реклама" in t) or ("#advert" in t):
+        return True
+
+    return False
+
+
+def _strip_promo_footer(text: str) -> str:
+    """
+    Убирает типовые промо/контактные строки в конце поста.
+    """
+    if not text:
+        return ""
+
+    lines = [ln.rstrip() for ln in str(text).splitlines()]
+    if not lines:
+        return ""
+
+    bad_line_res = [
+        re.compile(r"(?i)\bрекламный\s+отдел\b"),
+        re.compile(r"(?i)\bпо\s+вопросам\s+рекламы\b"),
+        re.compile(r"(?i)\bразмещени[ея]\s+реклам[ыы]\b"),
+        re.compile(r"(?i)\bсотрудничеств[оа]\b"),
+        re.compile(r"(?i)\bпрайс\b"),
+        re.compile(r"(?i)\bпромокод\b"),
+        re.compile(r"(?i)\bподпис(ывайся|ись|аться)\b"),
+        re.compile(r"(?i)\bнаш(и)?\s+канал(ы)?\b"),
+        re.compile(r"(?i)\bканалы\s+регионов\b"),
+        re.compile(r"(?i)@manager[_-]?pr\b"),
+    ]
+
+    def is_bad_line(ln: str) -> bool:
+        s = (ln or "").strip()
+        if not s:
+            return True  
+        if "max.ru/" in s.lower() and ("подпиш" in s.lower() or "канал" in s.lower()):
+            return True
+        return any(rx.search(s) for rx in bad_line_res)
+
+    i = len(lines) - 1
+    removed = 0
+    while i >= 0 and removed < 12:  
+        if is_bad_line(lines[i]):
+            removed += 1
+            i -= 1
+            continue
+        break
+
+    cleaned = "\n".join(lines[: i + 1]).strip()
+    return cleaned
 
 
 def build_posts_df(source_folder: str) -> pd.DataFrame:
@@ -125,6 +184,13 @@ def build_posts_df(source_folder: str) -> pd.DataFrame:
             if not text:
                 continue
             if _is_ad(text):
+                continue
+
+            if _is_ad(text):
+                continue
+
+            text = _strip_promo_footer(text)
+            if not text:
                 continue
 
             all_posts.append({
@@ -154,6 +220,8 @@ def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
         ])
 
     out = df.copy()
+    if "views" in out.columns:
+        out["views"] = pd.to_numeric(out["views"], errors="coerce").fillna(0)
 
     def make_doc_id(row: pd.Series) -> str:
         post_id = row.get("post_id")
@@ -179,7 +247,7 @@ def build_rag_docs(df: pd.DataFrame) -> pd.DataFrame:
             "category": row.get("category"),
             "agent": row.get("agent"),
             "date": row.get("_date_iso"),
-            "views": int(row.get("views", 0) or 0),
+            "views": _as_int_views(row.get("views")),
             "post_id": row.get("post_id"),
         }
         return json.dumps(meta, ensure_ascii=False)
