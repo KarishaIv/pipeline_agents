@@ -185,16 +185,13 @@ class PipelineRunner:
             [
                 {
                     "UUID": questions_uuids[question],
-                    "question": question,
                     "embedding": get_embedding(question, query=False),
+                    "question": question,
                 }
                 for question in datasets['survey_questions']
             ], 
             questions_path,
         )
-        # await StorageManager.save_survey_results_parquet_temp(
-        #     result, self.output_dir / f"sim_{timestamp}", datasets['survey_questions']
-        # )
         
         # Сохранение персон
         logger.info(f" Сохранение персон")
@@ -210,8 +207,8 @@ class PipelineRunner:
             personas_path,
         )
 
-        # Сохранение групп персон
-        logger.info(f" Сохранение групп персон")
+        # Сохранение целевых аудиторий
+        logger.info(f" Сохранение целевых аудиторий")
         await StorageManager.append_parquet_async(
             [
                 {
@@ -238,18 +235,18 @@ class PipelineRunner:
             [
                 {
                     "UUID": get_uuid("simulations"),
-                    "persona_UUID": result['profile']['UUID'],
-                    "question_UUID": questions_uuids[state['scenario']],
+                    **get_sim_embeddings(state),
                     **get_sim_reasonings(state),
                     **get_sim_last_reactions(state),
-                    "generation_count": state['generation_count'],
-                    "max_generations": state['max_generations'],
+                    "persona_UUID": result['profile']['UUID'],
+                    "question_UUID": questions_uuids[state['scenario']],
                     "decision_reasoning": get_decision(state['final_decision'])['reasoning'],
                     "decision": get_decision(state['final_decision'])['decision'],
                     "decision_confidence": get_decision(state['final_decision'])['confidence'],
+                    "generation_count": state['generation_count'],
+                    "max_generations": state['max_generations'],
                     "timestamp": state['timestamp'],
                     # TODO: добавить контекст агентов
-                    **get_sim_vectors(state),
                 } 
                 for result in results 
                 for response in result['survey_responses']
@@ -509,7 +506,7 @@ def get_sim_last_reactions(state: Dict) -> Dict[str, str]:
         "ideological_reaction": state['ideological_history'][-1]['reaction'],
     }
 
-def get_sim_vectors(state: Dict) -> Dict[str, List[float]]:
+def get_sim_embeddings(state: Dict) -> Dict[str, List[float]]:
     reasonings = get_sim_reasonings(state)
     joined_reasonings = {key: "\n".join(value) for key, value in reasonings.items()}
     joined_reasonings['decision_reasoning'] = get_decision(state['final_decision'])['reasoning']
@@ -544,106 +541,3 @@ def get_decision(decision: Dict | str | None) -> Dict:
             "decision": None,
             "confidence": 0,
         }
-
-# TODO: возможно, в будущем агент должен будет уметь считать статистики как, например, здесь
-# async def _generate_survey_summary(self, results: List[Dict[str, Any]], out_dir: Path):
-#     """Генерирует сводную статистику по опросу"""
-#     logger.info("Генерация сводной статистики опроса")
-        
-#     question_stats = {}
-        
-#     for result in results:
-#         responses = result.get("survey_responses", [])
-#         for response in responses:
-#             question_text = response.get("question", "Unknown")
-#             full_state = response.get("full_state", {})
-            
-#             final_decision = full_state.get("final_decision", {})
-#             if isinstance(final_decision, dict):
-#                 agreement = final_decision.get("decision", False)
-#             else:
-#                 agreement = getattr(final_decision, "decision", False)
-                
-#             if question_text not in question_stats:
-#                 question_stats[question_text] = {
-#                     "question": question_text,
-#                     "agree": 0, 
-#                     "disagree": 0, 
-#                     "total": 0,
-#                     "agree_percent": 0.0,
-#                     "disagree_percent": 0.0,
-#                     "confidence_sum": 0.0, 
-#                     "confidence_avg": 0.0
-#                 }
-            
-#             if agreement:
-#                 question_stats[question_text]["agree"] += 1
-#             else:
-#                 question_stats[question_text]["disagree"] += 1
-                
-#             question_stats[question_text]["total"] += 1
-                
-#             if isinstance(final_decision, dict):
-#                 confidence = final_decision.get("confidence", 0.5)
-#             else:
-#                 confidence = getattr(final_decision, "confidence", 0.5)
-                
-#             question_stats[question_text]["confidence_sum"] += confidence
-        
-#     for stats in question_stats.values():
-#         total = stats["total"]
-#         if total > 0:
-#             stats["agree_percent"] = round((stats["agree"] / total) * 100, 2)
-#             stats["disagree_percent"] = round((stats["disagree"] / total) * 100, 2)
-#             stats["confidence_avg"] = round(stats["confidence_sum"] / total, 3)
-        
-#     question_stats_list = list(question_stats.values())
-#     question_stats_list.sort(key=lambda x: x["agree_percent"], reverse=True)
-        
-#     summary = {
-#         "timestamp": datetime.utcnow().isoformat(),
-#         "total_respondents": len(results),
-#         "total_questions": len(self.survey_questions),
-#         "question_statistics": question_stats_list,
-#         "overall_agreement_percent": round(
-#             sum(stats["agree"] for stats in question_stats_list) / 
-#             (sum(stats["total"] for stats in question_stats_list) or 1) * 100, 2
-#         )
-#     }
-        
-#     await StorageManager.save_json_async(summary, out_dir / "survey_summary.json")
-        
-#     simplified_stats = {}
-#     for item in question_stats_list:
-#         simplified_stats[item["question"]] = {
-#             "agree": item["agree"],
-#             "disagree": item["disagree"], 
-#             "agree_percent": item["agree_percent"],
-#             "disagree_percent": item["disagree_percent"],
-#             "confidence_avg": item["confidence_avg"]
-#         }
-        
-#     simplified_summary = {
-#         "timestamp": summary["timestamp"],
-#         "total_respondents": summary["total_respondents"],
-#         "overall_agreement_percent": summary["overall_agreement_percent"],
-#         "question_statistics": simplified_stats,
-#     }
-        
-#     await StorageManager.save_json_async(
-#         simplified_summary, 
-#         out_dir / "survey_summary_simplified.json"
-#     )
-        
-#     logger.info(f"СВОДКА ОПРОСА - {len(results)} респондентов")
-#     logger.info("=" * 80)
-#     for i, item in enumerate(question_stats_list, 1):
-#         logger.info(
-#             f"{i:2d}. {item['agree_percent']:5.1f}% согласны "
-#             f"({item['agree']:3d}/{item['total']:3d}) "
-#             f"[доверие: {item['confidence_avg']:.3f}] - "
-#             f"{item['question'][:60]}..."
-#         )
-        
-#     logger.info(f"Общее согласие: {summary['overall_agreement_percent']:.1f}%")
-#     logger.info(f"Сводка опроса сохранена: {len(results)} респондентов, {len(question_stats)} вопросов")

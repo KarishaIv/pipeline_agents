@@ -253,7 +253,6 @@ class PersonaAgent(ABC):
     def __init__(
         self,
         agent_name: str,
-        #model: str = "gpt-4.1-mini",
         model = None,  # Использует LLM_MODEL из config по умолчанию
         temperature: float = 0.7
     ):
