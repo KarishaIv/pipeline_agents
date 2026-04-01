@@ -203,19 +203,41 @@ def normalize_features(russian_df, american_df):
     return russian_normalized, american_normalized
 
 
+_MARITAL_PGM_NORMALIZE = {
+    'Замужем': 'Женат',
+}
+
+_EDUCATION_PGM_NORMALIZE = {
+    'Среднее':                'среднего профессионального образования',
+    'среднее':                'среднего профессионального образования',
+    'Незаконченное высшее':   'бакалавриат',
+    'незаконченное высшее':   'бакалавриат',
+    'Высшее':                 'бакалавриат',
+    'высшее':                 'бакалавриат',
+}
+
+
 def normalize_evidence(evidence: dict):
     """Normalize evidence to match training data format"""
     normalized_evidence = []
-    
+
     for key, value in evidence.items():
         if key == 'age_group':
             age = int(value)
             age_group = np.digitize(age, PGM_CONFIG['age_bins'])
             normalized_evidence.append((key, age_group))
 
+        elif key == 'marital_status':
+            normalized_value = _MARITAL_PGM_NORMALIZE.get(value, value)
+            normalized_evidence.append((key, normalized_value))
+
+        elif key == 'education':
+            normalized_value = _EDUCATION_PGM_NORMALIZE.get(value, value)
+            normalized_evidence.append((key, normalized_value))
+
         elif key in MATCH_COLS:
             normalized_evidence.append((key, value))
-    
+
     return normalized_evidence
 
 
