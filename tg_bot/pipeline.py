@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from config import NEWS_SYSTEM_PATH, PIPELINE_PATH, YANDEX_API_KEY
 from llm import extract_demographics_with_llm
@@ -20,7 +20,15 @@ def _init_pipeline():
     global _pipeline_initialized
     if _pipeline_initialized:
         return
-    from config_pipeline import set_yandex_config 
+
+    import importlib.util
+    _pipeline_config_path = os.path.join(_abs_pipeline, "config.py")
+    spec = importlib.util.spec_from_file_location("config", _pipeline_config_path)
+    pipeline_config_mod = importlib.util.module_from_spec(spec)
+    sys.modules["config"] = pipeline_config_mod
+    spec.loader.exec_module(pipeline_config_mod)
+
+    from config_pipeline import set_yandex_config
     set_yandex_config(
         os.getenv("YANDEX_FOLDER_ID", ""),
         os.getenv("YANDEX_API_KEY", ""),
@@ -53,6 +61,7 @@ async def run_full_analysis(
     audiences: List[str],
     counts: List[int],
     question: str,
+    simulation_progress_callback: Optional[Callable[[int, int], Any]] = None,
 ) -> dict:
     _init_pipeline()
     from src.orchestration import PipelineRunner
@@ -101,7 +110,11 @@ async def run_full_analysis(
         "ocean_flag": True,
     }
 
-    runner = PipelineRunner(pipeline_config, news_enricher=_news_enricher)
+    runner = PipelineRunner(
+        pipeline_config,
+        news_enricher=_news_enricher,
+        simulation_progress_callback=simulation_progress_callback,
+    )
     results = await runner.run()
 
     return {

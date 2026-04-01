@@ -16,7 +16,7 @@ YANDEX_API_KEY = os.getenv("YANDEX_API_KEY", "YOUR_API_KEY")
 YANDEX_GPT_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 YANDEX_MODEL_URI = f"gpt://{YANDEX_FOLDER_ID}/yandexgpt/latest"
 
-ANALYSIS_TIMEOUT = 300
+ANALYSIS_TIMEOUT = 900
 
 # Пути к данным
 DATA_PATHS = {

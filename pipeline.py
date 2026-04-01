@@ -101,10 +101,10 @@ async def run_full_analysis(
     pipeline_config = {
         "evidence": evidence_list,
         "survey_questions": [question],
-        "nemo_size": 5000,
+        "nemo_size": 1000,
         "output": out_dir,
         "simulation_steps": 1,
-        "concurrency": 5,
+        "concurrency": 2,
         "timeout": 90.0,
         "ta_concurrency": 1,
         "agent_mode": "survey",
