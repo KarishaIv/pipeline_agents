@@ -1,14 +1,22 @@
-import numpy as np
+import logging
 import os
-from pathlib import Path
-from yandex_chain import YandexGPTModel
+import numpy as np
 
-PROJECT_ROOT = Path(__file__).parent
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+)
 
+PIPELINE_PATH = os.getenv("PIPELINE_PATH", "/Users/msamorodova/pipeline_agents")
+NEWS_SYSTEM_PATH = os.getenv("NEWS_SYSTEM_PATH", "../pipeline_agents-multiagent_system_for_context/multi_agent_rag")
 
-LLM_MODEL = YandexGPTModel.Pro  
-LLM_TEMPERATURE = 0.5
-LLM_MAX_RETRIES = 3
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "YOUR_BOT_TOKEN")
+YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID", "YOUR_FOLDER_ID")
+YANDEX_API_KEY = os.getenv("YANDEX_API_KEY", "YOUR_API_KEY")
+YANDEX_GPT_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+YANDEX_MODEL_URI = f"gpt://{YANDEX_FOLDER_ID}/yandexgpt/latest"
+
+ANALYSIS_TIMEOUT = 300
 
 # Пути к данным
 DATA_PATHS = {
@@ -111,7 +119,7 @@ OCEAN_CALCULATION = {
 
 OUTPUT_COLUMNS = [
      *MATCH_COLS, # социо-демо
-    "openness", "conscientiousness", "extraversion",  "agreeableness", "neuroticism"                    # OCEAN
+    "openness", "conscientiousness", "extraversion",  "agreeableness", "neuroticism",                  # OCEAN
     'cluster_id', 'group_key', 'cluster_weight',            # кластер инфо
     'n_americans_in_group', 'n_clusters_total'              # статистика
 ]
