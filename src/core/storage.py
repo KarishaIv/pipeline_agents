@@ -7,7 +7,10 @@ import logging
 import pandas as pd
 from pandas import DataFrame
 from pydantic.dataclasses import dataclass
+<<<<<<< HEAD
 import uuid
+=======
+>>>>>>> ea53eba (Fixed: saving finished, minor bugs, Deleted: openai-api-key logic)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,6 @@ class StorageManager:
     - save_batch: сохраняет набор результатов агрегированно
     - append_parquet_async: добавляет данные в parquet файл
     """
-    QUESTION_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_OID, "questions")
 
     @staticmethod
     async def save_json_async(obj: Any, path: Path, ensure_ascii: bool = False, indent: int = 2) -> None:
