@@ -14,23 +14,25 @@ from src.utils import normalize_features, normalize_evidence, filter_real_russia
 from src.clustering import replicate_personas_with_gmm
 from src.core.simulation_manager import SimulationManager
 from src.core.storage import StorageManager
+from src.news_enricher import NewsContextEnricher
 
 from config import *
-from pandarallel import pandarallel
 import pandas as pd
-pandarallel.initialize(progress_bar=False, nb_workers=4) 
+from pandarallel import pandarallel
+pandarallel.initialize(progress_bar=False, nb_workers=4)
 
 logger = logging.getLogger(__name__)
 
 class PipelineRunner:
     """Основной класс для запуска пайплайна генерации и симуляции персон"""
     
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, news_enricher: Optional[NewsContextEnricher] = None):
         self.config = config
         self.output_dir = Path(config['output'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.use_pgm = config.get('use_pgm', True)
-
+        self.news_enricher = news_enricher
+        
     async def run(self):
         """Запуск полного пайплайна"""
         logger.info("🚀 Starting pipeline execution")
@@ -44,9 +46,14 @@ class PipelineRunner:
         
         # 3. Генерация/фильтрация персон для всех целевых аудиторий
         all_personas = await self._generate_or_filter_personas(datasets, pgm_model)
-        
+
+        # 3.5 Получение новостного контекста среды (опционально)
+        world_contexts: Dict[str, dict] = {}
+        if self.news_enricher:
+            world_contexts = await self._enrich_with_news_context(datasets['evidence'])
+
         # 4. Запуск симуляций
-        results = await self._run_simulations(all_personas, datasets)
+        results = await self._run_simulations(all_personas, datasets, world_contexts)
         
         # 5. Сохранение результатов
         await self._save_results(all_personas, results, datasets)
@@ -58,7 +65,10 @@ class PipelineRunner:
         """Загрузка всех необходимых datasets"""
         logger.info("Loading datasets...")
 
-        evidence_data = load_evidence_from_json(self.config['evidence'])
+        if isinstance(self.config['evidence'], list):
+            evidence_data = self.config['evidence']
+        else:
+            evidence_data = load_evidence_from_json(self.config['evidence'])
         nemo_data = load_american_data(self.config['nemo_size'])
         russian_data = load_synthetic_data()
         
@@ -72,13 +82,18 @@ class PipelineRunner:
             'russian_preprocessed': russian_data_preprocessed
         }
         
-        # Загрузка вопросов опроса
-        try:
-            datasets['survey_questions'] = load_survey_data()
-            logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
-        except Exception as e:
-            logger.warning(f"Failed to load survey questions: {e}")
-            datasets['survey_questions'] = []
+        # Загрузка вопросов опроса если нужно
+        if self.config['agent_mode'] == 'survey':
+            if self.config.get('survey_questions'):
+                datasets['survey_questions'] = self.config['survey_questions']
+                logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions (inline)")
+            else:
+                try:
+                    datasets['survey_questions'] = load_survey_data()
+                    logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
+                except Exception as e:
+                    logger.warning(f"Failed to load survey questions: {e}")
+                    datasets['survey_questions'] = []
         
         logger.info(f"  ✓ Evidence: {len(evidence_data)} target audiences")
         logger.info(f"  ✓ Russian data: {len(russian_data)} personas")
@@ -102,6 +117,29 @@ class PipelineRunner:
         logger.info(f"  ✓ Model trained: {len(trained_model.nodes())} nodes, {len(trained_model.edges())} edges")
         return trained_model
     
+    async def _enrich_with_news_context(
+        self, evidence_list: List[Dict]
+    ) -> Dict[str, dict]:
+        """
+        Для каждой целевой аудитории делает один вызов новостного оркестратора.
+        Возвращает словарь {ta_name → news_context} — контекст среды, отдельно от персон.
+        """
+        logger.info("📰 Получение новостного контекста...")
+
+        await self.news_enricher.initialize()
+
+        ta_context_map: Dict[str, dict] = {}
+        for evidence in evidence_list:
+            ta_name = evidence.get('target_audience_name', '')
+            question = evidence.get('news_question', ta_name)
+            if ta_name:
+                context = await self.news_enricher.get_news_context(question, ta_name)
+                ta_context_map[ta_name] = context
+
+        enriched = sum(1 for v in ta_context_map.values() if v)
+        logger.info(f"  ✓ Новостной контекст получен для {enriched}/{len(ta_context_map)} ЦА")
+        return ta_context_map
+
     async def _generate_or_filter_personas(self, datasets: Dict, pgm_model) -> pd.DataFrame:
         """Генерация или фильтрация персон для всех целевых аудиторий"""
         if self.use_pgm:
@@ -139,19 +177,21 @@ class PipelineRunner:
         logger.info(f"  ✓ Processed {len(all_personas)} personas across {len(datasets['evidence'])} target audiences")
         return all_personas
     
-    async def _run_simulations(self, all_personas: pd.DataFrame, datasets):
+    async def _run_simulations(self, all_personas: pd.DataFrame, datasets, world_contexts: Dict[str, dict] = None):
         """Запуск мульти-агентных симуляций"""
         logger.info("🤖 Running multi-agent simulations...")
-        
+
         personas = [all_personas.iloc[i].to_dict() for i in range(len(all_personas))]
-        
+
         manager = SimulationManager(
             out_dir=self.output_dir,
             concurrency=self.config['concurrency'],
             timeout=self.config['timeout'],
-            visualize=False,
+            visualize=(self.config['agent_mode'] == 'credit'),
             run_retries=1,
-            survey_questions=datasets.get('survey_questions', [])
+            agent_mode=self.config['agent_mode'],
+            survey_questions=datasets.get('survey_questions', []),
+            world_contexts=world_contexts or {},
         )
         
         timestamp = datetime.now().strftime("%m%d_%H%M%S")
@@ -161,7 +201,7 @@ class PipelineRunner:
             out_subdir=f"sim_{timestamp}"
         )
         
-        logger.info(f"  ✓ Completed {len(results)} simulations")
+        logger.info(f"  ✓ Completed {len(results)} simulations in {self.config['agent_mode']} mode")
         return results
     
     async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict):
@@ -391,23 +431,14 @@ async def _process_target_audiences_generic(
         )
         
         # 6. Формирование статистики
-        # Проверяем наличие колонок перед обращением
-        unique_clusters = None
-        unique_groups = None
-        if ocean_flag and len(final_personas) > 0:
-            if 'cluster_id' in final_personas.columns:
-                unique_clusters = final_personas['cluster_id'].nunique()
-            if 'group_key' in final_personas.columns:
-                unique_groups = final_personas['group_key'].nunique()
-        
         ta_stats = _create_ta_stats(
             ta_index=ta_index,
             ta_name=ta_name,
             data_source=data_source,
             original_size=original_size,
             replicated_size=len(final_personas),
-            unique_clusters=unique_clusters,
-            unique_groups=unique_groups
+            unique_clusters=None if not ocean_flag or 'cluster_id' not in final_personas.columns else final_personas['cluster_id'].nunique(),
+            unique_groups=None if not ocean_flag or 'group_key' not in final_personas.columns else final_personas['group_key'].nunique()
         )
 
         logger.info(f"[TA:{ta_name}] Обработка завершена: {len(final_personas)} персон")

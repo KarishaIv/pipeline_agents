@@ -6,8 +6,10 @@ from typing import Iterable, List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+from src.agents.multi_agent import MultiAgentSystem
 from src.agents.survey_agent import MultiAgentReasoner
 from src.core.storage import StorageManager
+from src.core.visualization import EmotionalVisualizer
 from config import *
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,9 @@ class SimulationManager:
                  visualize: bool = True,
                  run_retries: int = 1,
                  executor_workers: int = 4,
-                 survey_questions: List[str] = None):
+                 agent_mode: str = "credit",
+                 survey_questions: List[str] = None,
+                 world_contexts: Dict[str, dict] = None):
         self.out_dir = out_dir
         self.concurrency = concurrency
         self._sem = asyncio.Semaphore(concurrency)
@@ -32,7 +36,9 @@ class SimulationManager:
         self.visualize = visualize
         self.run_retries = run_retries
         self.executor = ThreadPoolExecutor(max_workers=executor_workers)
+        self.agent_mode = agent_mode
         self.survey_questions = survey_questions or []
+        self.world_contexts = world_contexts or {}  # {ta_name → news_context}
 
     async def _run_single(self, profile: Dict[str, Any], steps: int, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -43,16 +49,26 @@ class SimulationManager:
         
         for attempt in range(1, self.run_retries + 2):
             try:
-                logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
+                if self.agent_mode == "survey":
+                    logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
 
-                reasoner = MultiAgentReasoner(profile)
-                survey_results = await reasoner.answer_survey_questions(self.survey_questions)
-                return {
-                    "profile": profile,
-                    "survey_responses": survey_results, 
-                    "total_questions": len(self.survey_questions),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+                    ta_name = profile.get("target_audience_name", "")
+                    world_ctx = self.world_contexts.get(ta_name, {})
+                    reasoner = MultiAgentReasoner(profile, world_context=world_ctx)
+                    survey_results = await reasoner.answer_survey_questions(self.survey_questions)
+                    return {
+                        "profile": profile,
+                        "survey_responses": survey_results, 
+                        "mode": "survey",
+                        "total_questions": len(self.survey_questions),
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                else:
+                    logger.debug(f"[Persona:{persona_name}] Запуск кредитного режима, шагов: {steps}")
+                    mas = MultiAgentSystem(profile, steps=steps)
+                    coro = mas.run_simulation()
+                    result = await asyncio.wait_for(coro, timeout=self.timeout)
+                    return result
             except Exception as e:
                 logger.warning(f"[Persona:{persona_name}] Сбой симуляции, попытка {attempt}: {e}")
                 last_exc = e
@@ -68,7 +84,7 @@ class SimulationManager:
         
         async with self._sem:
             started = time.time()
-            logger.info(f"[Run:{run_id}] START")
+            logger.info(f"[Run:{run_id}] START (mode: {self.agent_mode})")
             
             try:
                 result = await self._run_single(profile, steps)
@@ -94,7 +110,7 @@ class SimulationManager:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         profiles_list = list(profiles)
-        logger.info(f"Запуск {len(profiles_list)} симуляций, параллелизм: {self.concurrency}")
+        logger.info(f"Запуск {len(profiles_list)} симуляций в режиме {self.agent_mode}, параллелизм: {self.concurrency}")
 
         tasks = []
         results = []
