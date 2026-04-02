@@ -644,7 +644,8 @@ class MultiAgentReasoner:
         persona_context: Dict,
         max_generations: int = 5,
         model: str = LLM_MODEL, 
-        temperature: float = LLM_TEMPERATURE
+        temperature: float = LLM_TEMPERATURE,
+        world_context: Dict = None
     ):
         self.max_generations = max_generations
         self.model = model

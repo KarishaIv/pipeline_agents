@@ -82,18 +82,17 @@ class PipelineRunner:
             'russian_preprocessed': russian_data_preprocessed
         }
         
-        # Загрузка вопросов опроса если нужно
-        if self.config['agent_mode'] == 'survey':
-            if self.config.get('survey_questions'):
-                datasets['survey_questions'] = self.config['survey_questions']
-                logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions (inline)")
-            else:
-                try:
-                    datasets['survey_questions'] = load_survey_data()
-                    logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
-                except Exception as e:
-                    logger.warning(f"Failed to load survey questions: {e}")
-                    datasets['survey_questions'] = []
+        # Загрузка вопросов опроса
+        if self.config.get('survey_questions'):
+            datasets['survey_questions'] = self.config['survey_questions']
+            logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions (inline)")
+        else:
+            try:
+                datasets['survey_questions'] = load_survey_data()
+                logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
+            except Exception as e:
+                logger.warning(f"Failed to load survey questions: {e}")
+                datasets['survey_questions'] = []
         
         logger.info(f"  ✓ Evidence: {len(evidence_data)} target audiences")
         logger.info(f"  ✓ Russian data: {len(russian_data)} personas")
@@ -187,9 +186,7 @@ class PipelineRunner:
             out_dir=self.output_dir,
             concurrency=self.config['concurrency'],
             timeout=self.config['timeout'],
-            visualize=(self.config['agent_mode'] == 'credit'),
             run_retries=1,
-            agent_mode=self.config['agent_mode'],
             survey_questions=datasets.get('survey_questions', []),
             world_contexts=world_contexts or {},
         )
@@ -201,7 +198,7 @@ class PipelineRunner:
             out_subdir=f"sim_{timestamp}"
         )
         
-        logger.info(f"  ✓ Completed {len(results)} simulations in {self.config['agent_mode']} mode")
+        logger.info(f"  ✓ Completed {len(results)} simulations")
         return results
     
     async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict):
@@ -288,7 +285,7 @@ class PipelineRunner:
                     "timestamp": state['timestamp'],
                     # TODO: добавить контекст агентов
                 } 
-                for result in results 
+                for result in results if 'survey_responses' in result
                 for response in result['survey_responses']
                 for state in [response['full_state']]   # чтобы не писать на каждой строке ['full_state']
             ],
