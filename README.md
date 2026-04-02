@@ -50,7 +50,7 @@ Telegram (JSON в папке)  →  prep_rag  →  rag_docs.parquet
 
 ### 1. Парсинг каналов
 
-Скрипт: `tg_parser/more_posts.py`.
+Скрипт: `tg_parser/get_posts.py`.
 
 Перед запуском задайте `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`.
 
@@ -58,10 +58,10 @@ Telegram (JSON в папке)  →  prep_rag  →  rag_docs.parquet
 
 ```bash
 # Посты за «вчера» (или за день --day YYYY-MM-DD), папка с префиксом по умолчанию
-python tg_parser/more_posts.py
+python tg_parser/get_posts.py
 
 # Несколько дней назад (режим hours + days-back)
-python tg_parser/more_posts.py --mode hours --days-back 30
+python tg_parser/get_posts.py --mode hours --days-back 30
 ```
 
 Параллельность и паузы: `--max-concurrent`, `--batch-sleep`. Вывод — JSON-файлы по каналам в создаваемой папке (имя зависит от режима и префикса `--output-prefix`).
@@ -131,18 +131,7 @@ python rag/compare_models.py --local --window-days 14 --top-k 5
 
 ---
 
-# Pipeline agents
-
-Репозиторий объединяет два направления:
-
-1. **Симуляция опросов и мультиагентная модель** — PGM, перенос OCEAN, сценарии на Yandex GPT (`main.py`, каталог `src/`).
-2. **RAG по новостям Telegram** — парсинг каналов, подготовка датасета, эмбеддинги E5, векторное хранилище **Qdrant**, семантический поиск (`rag/`, `tg_parser/`).
-
-Актуальная схема и команды ниже ориентированы на рабочую ветку **`prepare_data`**.
-
----
-
-## Установка
+## Симуляция и мультиагенты (из `main.py`)
 
 ```bash
 cd pipeline_agents
@@ -183,7 +172,7 @@ Telegram (JSON в папке)  →  prep_rag  →  rag_docs.parquet
 
 ### 1. Парсинг каналов
 
-Скрипт: `tg_parser/more_posts.py`.
+Скрипт: `tg_parser/get_posts.py`.
 
 Перед запуском задайте `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`.
 
@@ -191,10 +180,10 @@ Telegram (JSON в папке)  →  prep_rag  →  rag_docs.parquet
 
 ```bash
 # Посты за «вчера» (или за день --day YYYY-MM-DD), папка с префиксом по умолчанию
-python tg_parser/more_posts.py
+python tg_parser/get_posts.py
 
 # Несколько дней назад (режим hours + days-back)
-python tg_parser/more_posts.py --mode hours --days-back 30
+python tg_parser/get_posts.py --mode hours --days-back 30
 ```
 
 Параллельность и паузы: `--max-concurrent`, `--batch-sleep`. Вывод — JSON-файлы по каналам в создаваемой папке (имя зависит от режима и префикса `--output-prefix`).
