@@ -9,14 +9,13 @@ def _format_news_block(news_ctx: dict) -> str:
     if not isinstance(news_ctx, dict) or not news_ctx:
         return ""
     lines = []
-    if news_ctx.get("overall_reaction"):
-        lines.append(f"Реакция: {news_ctx['overall_reaction']} (горизонт: {news_ctx.get('impact_horizon', '?')})")
     if news_ctx.get("factors"):
         lines.append("Факторы: " + "; ".join(news_ctx["factors"]))
     if news_ctx.get("summary_text"):
         lines.append(news_ctx["summary_text"])
     if not lines:
         return ""
+
     return "<i>" + html.escape("\n".join(lines)) + "</i>"
 
 
@@ -96,13 +95,7 @@ def format_reasoning_message(state: dict) -> str:
         if not reasoning:
             continue
 
-        age = profile.get("age_group", "?")
-        region = profile.get("region", "")
-        income = profile.get("income_level", "")
-        edu = profile.get("education", "")
-        parts = [p for p in [str(age) + " л.", region, income, edu] if p and p != "не указано"]
-        label = "<i>" + html.escape(", ".join(parts)) + "</i>"
-        text = f"{label}\n{html.escape(reasoning)}"
+        text = html.escape(reasoning)
 
         if ta in samples:
             if decision is True and samples[ta]["yes"] is None:
@@ -144,13 +137,44 @@ def format_news_message(state: dict) -> str:
     return "\n".join(lines)
 
 
-def _make_archive(out_dir: str) -> bytes:
-    """Создаёт zip-архив из директории результатов."""
+def _make_archive(out_dir: str, news_contexts: dict = None) -> bytes:
+    """Создаёт zip-архив из директории результатов + папка news/ с топ-3 новостями по темам."""
     buf = io.BytesIO()
     path = Path(out_dir)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in path.rglob("*"):
             if f.is_file():
                 zf.write(f, f.relative_to(path))
+
+        if news_contexts:
+            for ta, ctx in news_contexts.items():
+                if not isinstance(ctx, dict):
+                    continue
+                evidence = ctx.get("evidence") or []
+                if not evidence:
+                    continue
+                by_topic: Dict[str, list] = {}
+                for item in evidence:
+                    if not isinstance(item, dict):
+                        continue
+                    topic = item.get("topic") or "Прочее"
+                    by_topic.setdefault(topic, []).append(item)
+
+                safe_ta = "".join(c if c.isalnum() or c in " _-" else "_" for c in ta)[:80].strip()
+                for topic, items in by_topic.items():
+                    top_items = sorted(items, key=lambda x: x.get("rank", 999))[:10]
+                    safe_topic = "".join(c if c.isalnum() or c in " _-" else "_" for c in topic)[:60].strip()
+                    lines = [f"ЦА: {ta}", f"Тема: {topic}", "=" * 60, ""]
+                    for i, it in enumerate(top_items, 1):
+                        date = (it.get("source_datetime") or "")[:10]
+                        summary = (it.get("summary") or "").strip()
+                        src = it.get("source_type") or ""
+                        lines.append(f"#{i}  [{date}]  {src}")
+                        lines.append(summary)
+                        lines.append("")
+                        lines.append("-" * 60)
+                        lines.append("")
+                    content = "\n".join(lines)
+                    zf.writestr(f"news/{safe_ta}/{safe_topic}.txt", content)
     buf.seek(0)
     return buf.read()

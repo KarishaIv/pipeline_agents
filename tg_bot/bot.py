@@ -10,8 +10,10 @@ Telegram-бот: произвольный запрос - парсинг чере
 """
 
 import asyncio
+import logging
 
 from aiogram import Bot, Dispatcher
+from prometheus_client import start_http_server
 
 from config import TG_BOT_TOKEN
 from handlers import router
@@ -23,6 +25,8 @@ from pipeline import distribute_personas  # noqa
 
 
 async def main() -> None:
+    start_http_server(8001)
+    logging.info("✅ Метрики доступны на http://localhost:8001/metrics")
     bot = Bot(token=TG_BOT_TOKEN)
     dp  = Dispatcher()
     dp.include_router(router)
