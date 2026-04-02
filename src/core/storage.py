@@ -7,10 +7,6 @@ import logging
 import pandas as pd
 from pandas import DataFrame
 from pydantic.dataclasses import dataclass
-<<<<<<< HEAD
-import uuid
-=======
->>>>>>> ea53eba (Fixed: saving finished, minor bugs, Deleted: openai-api-key logic)
 
 logger = logging.getLogger(__name__)
 
