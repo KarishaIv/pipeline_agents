@@ -19,6 +19,8 @@ def setup_logging():
             logging.FileHandler('pipeline.log', encoding='utf-8')
         ]
     )
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 def parse_arguments():
     """Парсинг аргументов командной строки"""

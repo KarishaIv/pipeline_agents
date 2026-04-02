@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from config import *
@@ -8,7 +9,8 @@ from typing import Dict, List, Optional, Any
 import logging 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
-from yandex_chain import YandexLLM, YandexEmbeddings
+import httpx
+from openai import OpenAI
 from pydantic import BaseModel
 import re
 import uuid
@@ -101,43 +103,33 @@ def _parse_json_from_response(text: str) -> dict:
         logger.warning(f"Не удалось распарсить JSON из ответа: {text[:100]}")
         return {}
 
+def _sync_llm_call(prompt: str, model_uri: str, temperature: float) -> str:
+    """Synchronous single-turn call to Yandex GPT via OpenAI-compatible endpoint."""
+    client = OpenAI(
+        api_key=os.getenv("YANDEX_API_KEY"),
+        base_url=YANDEX_BASE_URL,
+    )
+    response = client.chat.completions.create(
+        model=model_uri,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+    )
+    return response.choices[0].message.content or ""
+
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def robust_llm_call(prompt: str, model = None, temperature: float = 0.5, structured_output: Optional[BaseModel]=None):
-    import os
-    from yandex_chain import YandexGPTModel
-    # Используем модель из конфига по умолчанию
+async def robust_llm_call(prompt: str, model: str = None, temperature: float = 0.5, structured_output: Optional[BaseModel] = None):
     if model is None:
         model = LLM_MODEL
-    
-    # Настройка Yandex GPT
-    api_key = os.getenv("YANDEX_API_KEY")
-    folder_id = os.getenv("YANDEX_FOLDER_ID")
-    
-    # Создаем YandexLLM с folder_id только если он указан
-    llm_params = {
-        "api_key": api_key,
-        "model": model,
-        "temperature": temperature
-    }
-    if folder_id:
-        llm_params["folder_id"] = folder_id
-    
-    llm = YandexLLM(**llm_params)
-    
-    # Добавляем инструкцию для структурированного вывода
+    model_uri = get_model_uri(model)
+
     if structured_output:
-        # Получаем JSON схему (поддерживаем Pydantic v1 и v2)
         try:
-            if hasattr(structured_output, 'model_json_schema'):
-                schema = structured_output.model_json_schema()  # Pydantic v2
-            elif hasattr(structured_output, 'schema'):
-                schema = structured_output.schema()  # Pydantic v1
-            else:
-                schema = {}
+            schema = structured_output.model_json_schema()
             schema_json = json.dumps(schema, ensure_ascii=False, indent=2)
         except Exception:
             schema_json = "{}"
-        
+
         enhanced_prompt = f"""{prompt}
 
 ВАЖНО: Верни ответ ТОЛЬКО в формате JSON с ПРЯМЫМИ ЗНАЧЕНИЯМИ (не схемой!).
@@ -151,21 +143,15 @@ async def robust_llm_call(prompt: str, model = None, temperature: float = 0.5, s
 {schema_json}
 
 Ответ должен быть валидным JSON объектом с прямыми значениями полей, без дополнительного текста."""
-        response = await asyncio.to_thread(lambda: llm.invoke(enhanced_prompt))
-        response_text = _get_text_from_response(response)
+        response_text = await asyncio.to_thread(_sync_llm_call, enhanced_prompt, model_uri, temperature)
         json_data = _parse_json_from_response(response_text)
-        # Валидируем через Pydantic
         try:
-            if hasattr(structured_output, 'model_validate'):
-                return structured_output.model_validate(json_data)  # Pydantic v2
-            else:
-                return structured_output(**json_data)  # Pydantic v1
+            return structured_output.model_validate(json_data)
         except Exception as e:
             logger.warning(f"Ошибка валидации Pydantic модели: {e}, возвращаем сырые данные")
             return json_data
     else:
-        response = await asyncio.to_thread(lambda: llm.invoke(prompt))
-        return _get_text_from_response(response)
+        return await asyncio.to_thread(_sync_llm_call, prompt, model_uri, temperature)
 
 
 def filter_real_russian_data(evidence: Dict, df_russian_preprocessed: pd.DataFrame, sample_size: int) -> pd.DataFrame:
@@ -407,22 +393,28 @@ def get_income_range(income: float, bins, labels) -> str:
     lower = int(bins[-2])
     return f"{label}: {f'{lower:,}'.replace(',', ' ')}+"
 
-def _build_embedding_model() -> YandexEmbeddings:
-    """Создаёт экземпляр YandexEmbeddings из переменных окружения."""
-    params: Dict[str, Any] = {
-        "api_key": os.getenv("YANDEX_API_KEY"),
-        "folder_id": os.getenv("YANDEX_FOLDER_ID"),
-        "model": LLM_MODEL,
-    }
-    return YandexEmbeddings(**params)
+def _fetch_embedding(text: str, model_suffix: str) -> List[float]:
+    """Call Yandex Embeddings REST API directly."""
+    api_key = os.getenv("YANDEX_API_KEY", "")
+    folder_id = os.getenv("YANDEX_FOLDER_ID", "")
+    model_uri = f"emb://{folder_id}/{model_suffix}/latest"
+    response = httpx.post(
+        YANDEX_EMBED_URL,
+        headers={
+            "Authorization": f"Api-Key {api_key}",
+            "x-folder-id": folder_id,
+        },
+        json={"modelUri": model_uri, "text": text},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()["embedding"]
 
-embedding_model = None
+
 def get_embedding(text: str, query: bool = True) -> List[float]:
-    """Возвращает embedding текста (query или document) через YandexEmbeddings."""
-    global embedding_model
-    if embedding_model is None:
-        embedding_model = _build_embedding_model()
-    return embedding_model.embed_query(text) if query else embedding_model.embed_document(text)
+    """Возвращает embedding текста через Yandex Embeddings API."""
+    suffix = "text-search-query" if query else "text-search-doc"
+    return _fetch_embedding(text, suffix)
 
 def get_uuid(namespace: str, text: str = "") -> str:
     """

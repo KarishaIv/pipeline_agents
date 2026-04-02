@@ -1,0 +1,39 @@
+[project]
+name = "pipeline-agents"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "dvc>=3.67.1",
+    "dvc-s3>=3.3.0",
+    "fastapi>=0.135.3",
+    "httpx>=0.28.1",
+    "huggingface-hub>=1.8.0",
+    "langchain>=1.2.14",
+    "langchain-community>=0.4.1",
+    "langchain-core>=1.2.24",
+    "langchain-openai>=1.1.12",
+    "langchain-qdrant>=1.1.0",
+    "langgraph>=1.1.4",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.4",
+    "openai>=2.30.0",
+    "pandarallel>=1.6.5",
+    "pandas>=3.0.2",
+    "pgmpy>=1.1.0",
+    "plotly>=6.6.0",
+    "pyarrow>=23.0.1",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+    "qdrant-client>=1.17.1",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
+    "sgr-agent-core>=0.7.0",
+    "tenacity>=9.1.4",
+    "torch>=2.11.0",
+    "tqdm>=4.67.3",
+    "transformers>=5.5.0",
+    "uuid6>=2025.0.1",
+    "uvicorn[standard]>=0.42.0",
+]

@@ -1,15 +1,15 @@
 from typing import TypedDict
-import pandas as pd
-from yandex_chain import YandexLLM
-from src.schemas.ocean_schema import ocean_schema
-from config import LLM_MODEL, LLM_TEMPERATURE
-from dotenv import load_dotenv
 import os
+import pandas as pd
+from langchain_openai import ChatOpenAI
+from src.schemas.ocean_schema import ocean_schema
+from config import LLM_MODEL, LLM_TEMPERATURE, YANDEX_BASE_URL, get_model_uri
+from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 import json
 import re
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 ocean_prompt = ChatPromptTemplate.from_messages([
@@ -43,18 +43,12 @@ def _parse_json_from_response(text: str) -> dict:
 
 def calculate_ocean_profiles(neighbor_profiles: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Calculate OCEAN profiles for a set of neighbor profiles."""
-    api_key = os.getenv('YANDEX_API_KEY')
-    folder_id = os.getenv('YANDEX_FOLDER_ID')
-    
-    llm_params = {
-        "api_key": api_key,
-        "model": LLM_MODEL,
-        "temperature": LLM_TEMPERATURE,
-    }
-    if folder_id:
-        llm_params["folder_id"] = folder_id
-    
-    llm = YandexLLM(**llm_params)
+    llm = ChatOpenAI(
+        api_key=os.getenv("YANDEX_API_KEY"),
+        base_url=YANDEX_BASE_URL,
+        model=get_model_uri(),
+        temperature=LLM_TEMPERATURE,
+    )
     chain = ocean_prompt | llm
 
     results = []
