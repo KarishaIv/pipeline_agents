@@ -36,3 +36,6 @@ pipeline.log
 
 /multi_agent_rag/
 /context_*.json
+
+# sgr_agent_core logs
+logs/
