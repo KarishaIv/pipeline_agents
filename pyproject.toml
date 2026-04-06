@@ -15,6 +15,7 @@ dependencies = [
     "langchain-core>=1.2.24",
     "langchain-openai>=1.1.12",
     "langchain-qdrant>=1.1.0",
+    "langsmith>=0.3.0",
     "langgraph>=1.1.4",
     "matplotlib>=3.10.8",
     "numpy>=2.4.4",
