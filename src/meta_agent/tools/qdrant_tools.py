@@ -47,6 +47,35 @@ def get_qdrant_service() -> QdrantService:
     return QdrantService()
 
 
+def build_collection_schema(collection_name: str) -> Dict[str, Any]:
+    """Call ``get_collection`` and return name, status, points_count,
+    vector_names, and payload_fields (from ``payload_schema``)."""
+    info = _qdrant.get_collection(collection_name=collection_name)
+
+    params = getattr(info.config, "params", None)
+    vec = getattr(params, "vectors", None) if params else None
+    if isinstance(vec, dict):
+        vector_names = list(vec.keys())
+    elif vec is not None:
+        vector_names = ["embedding"]
+    else:
+        vector_names = []
+
+    payload_fields: Dict[str, Any] = {}
+    for key, psi in (getattr(info, "payload_schema", None) or {}).items():
+        payload_fields[key] = {
+            "data_type": str(psi.data_type) if getattr(psi, "data_type", None) is not None else None,
+        }
+
+    return {
+        "collection_name": collection_name,
+        "status": str(info.status) if info.status is not None else None,
+        "points_count": info.points_count,
+        "vector_names": vector_names,
+        "payload_fields": payload_fields,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
