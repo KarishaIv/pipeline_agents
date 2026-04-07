@@ -1,16 +1,18 @@
-"""IronAgent lifecycle: creation, execution, result extraction."""
+"""Agent lifecycle: creation, execution, result extraction."""
 
 import asyncio
 import json
 import logging
 import os
 
-from langsmith import traceable
 from langsmith.wrappers import wrap_openai
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
 
 from sgr_agent_core import AgentConfig
-from sgr_agent_core.agents.iron_agent import IronAgent
+from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
+from sgr_agent_core.base_tool import BaseTool
+
+import src.meta_agent.lib_patches  # noqa: F401  apply all third-party patches
 
 from config import get_model_uri, YANDEX_BASE_URL
 from src.meta_agent.prompts import MAX_HISTORY_CHARS
@@ -44,8 +46,8 @@ def _make_openai_client() -> AsyncOpenAI:
     return client
 
 
-def make_iron_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "iron_agent") -> IronAgent:
-    """Instantiate an IronAgent backed by the Yandex LLM."""
+def make_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "agent") -> ToolCallingAgent:
+    """Instantiate a ToolCallingAgent backed by the Yandex LLM."""
     api_key = os.getenv("YANDEX_API_KEY", "")
 
     cfg = AgentConfig()
@@ -54,7 +56,7 @@ def make_iron_agent(task: str, system_prompt: str, toolkit: list, *, name: str =
     cfg.llm.model = get_model_uri()
     cfg.prompts.system_prompt_str = system_prompt
 
-    return IronAgent(
+    return ToolCallingAgent(
         task_messages=[{"role": "user", "content": task}],
         openai_client=_make_openai_client(),
         agent_config=cfg,
@@ -64,7 +66,7 @@ def make_iron_agent(task: str, system_prompt: str, toolkit: list, *, name: str =
 
 
 def unwrap(result) -> str | None:
-    """Extract a string answer from an IronAgent execution result."""
+    """Extract a string answer from an agent execution result."""
     if result is None:
         return None
     if isinstance(result, str):
@@ -75,7 +77,7 @@ def unwrap(result) -> str | None:
 
 
 async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) -> str | TransientError:
-    """Run an IronAgent with retries on transient failures.
+    """Run a ToolCallingAgent with retries on transient failures.
 
     Returns the agent's answer string on success, or a TransientError sentinel
     when all retry attempts are exhausted on a transient API error.
@@ -85,7 +87,7 @@ async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) 
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            agent = make_iron_agent(task, system_prompt, toolkit, name=name)
+            agent = make_agent(task, system_prompt, toolkit, name=name)
             raw = unwrap(await agent.execute())
             if raw is None:
                 return json.dumps({"error": "Agent returned no result"}, ensure_ascii=False)

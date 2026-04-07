@@ -6,7 +6,7 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 from qdrant_client import QdrantClient, models
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,75 @@ COLLECTIONS = [
 ]
 
 
+def _infer_schema_type(series: pd.Series) -> Optional[PayloadSchemaType]:
+    """Map a DataFrame column to a Qdrant PayloadSchemaType, or None to skip."""
+    if pd.api.types.is_bool_dtype(series):
+        return PayloadSchemaType.BOOL
+    if pd.api.types.is_integer_dtype(series):
+        return PayloadSchemaType.INTEGER
+    if pd.api.types.is_float_dtype(series):
+        return PayloadSchemaType.FLOAT
+
+    sample = series.dropna()
+    if sample.empty:
+        return PayloadSchemaType.KEYWORD
+
+    first = sample.iloc[0]
+    if isinstance(first, (list, tuple)):
+        if not first:
+            return None
+        elem = first[0]
+        if isinstance(elem, str):
+            return PayloadSchemaType.KEYWORD
+        if isinstance(elem, (int, np.integer)):
+            return PayloadSchemaType.INTEGER
+        if isinstance(elem, (float, np.floating)):
+            return PayloadSchemaType.FLOAT
+        if isinstance(elem, bool):
+            return PayloadSchemaType.BOOL
+        return None
+    if isinstance(first, (dict, np.ndarray)):
+        return None
+    if isinstance(first, (np.bool_, bool)):
+        return PayloadSchemaType.BOOL
+    if isinstance(first, (np.integer, int)):
+        return PayloadSchemaType.INTEGER
+    if isinstance(first, (np.floating, float)):
+        return PayloadSchemaType.FLOAT
+    if isinstance(first, str):
+        max_len = int(sample.astype(str).str.len().max())
+        if max_len > 200:
+            return PayloadSchemaType.TEXT
+        return PayloadSchemaType.KEYWORD
+    return PayloadSchemaType.KEYWORD
+
+
+def _create_payload_indexes(
+    client: QdrantClient,
+    collection_name: str,
+    df: pd.DataFrame,
+    payload_keys: List[str],
+) -> None:
+    """Create payload indexes for all indexable payload columns."""
+    for field in payload_keys:
+        if field not in df.columns:
+            continue
+        schema_type = _infer_schema_type(df[field])
+        if schema_type is None:
+            logger.info("Skip index %s.%s (non-scalar)", collection_name, field)
+            continue
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field,
+                field_schema=schema_type,
+                wait=True,
+            )
+            logger.info("Indexed %s.%s as %s", collection_name, field, schema_type.value)
+        except Exception as exc:
+            logger.warning("Failed to index %s.%s: %s", collection_name, field, exc)
+
+
 def create_collection_from_parquet(
     client: QdrantClient,
     collection_name: str,
@@ -79,6 +148,8 @@ def create_collection_from_parquet(
             for _, row in df.iterrows()
         ],
     )
+
+    _create_payload_indexes(client, collection_name, df, payload_keys)
 
     return df.shape[0]
 

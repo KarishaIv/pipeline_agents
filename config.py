@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).parent
 YANDEX_BASE_URL = "https://llm.api.cloud.yandex.net/v1"
 YANDEX_EMBED_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
 
-LLM_MODEL = "yandexgpt/latest"
+LLM_MODEL = "yandexgpt-5.1"
 
 
 def get_model_uri(model: str = None) -> str:

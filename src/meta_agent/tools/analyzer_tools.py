@@ -1,8 +1,9 @@
 """
-Analytical tools for the analyzer IronAgent:
+Analytical tools for the analyzer agent:
   - ComputeStatsTool   — descriptive statistics on JSON data
   - ExecuteCodeTool    — safe sandboxed Python execution
   - CreateChartTool    — matplotlib chart generation
+  - SummarizeTextsTool — LLM-based summarisation / insight extraction
 """
 
 from __future__ import annotations
@@ -10,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import math
+import os
 import statistics as _stats
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -22,14 +25,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from openai import AsyncOpenAI
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
-from config import PROJECT_ROOT
+from config import PROJECT_ROOT, YANDEX_BASE_URL, get_model_uri
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
     from sgr_agent_core.agent_definition import AgentConfig
+
+logger = logging.getLogger("meta_agent.analyzer")
 
 CHARTS_DIR = PROJECT_ROOT / "charts"
 CODE_TIMEOUT = 30
@@ -332,3 +338,77 @@ class CreateChartTool(BaseTool):
                 {"error": str(exc), "traceback": traceback.format_exc()},
                 ensure_ascii=False,
             )
+
+
+class SummarizeTextsTool(BaseTool):
+    """Summarise or extract insights from a list of texts using the LLM.
+
+    Useful for distilling agents' reasoning logs, survey responses, textual
+    records, or any collection of free-form strings into a compact summary or
+    structured bullet-point insights.
+    """
+
+    tool_name = "summarize_texts"
+    description = (
+        "Send a list of texts to the LLM with a custom instruction and return a "
+        "concise summary or bullet-point insights. "
+        "Use for summarising agents' reasonings, survey answers, or any text corpus."
+    )
+
+    reasoning: str = Field(description="Why summarisation is needed and what insights to extract")
+    texts: List[str] = Field(
+        description="List of texts to summarise (e.g. reasoning logs, survey responses, records)",
+        min_length=1,
+    )
+    instruction: str = Field(
+        default=(
+            "Summarise the provided texts and extract the most important insights, "
+            "patterns, and conclusions. Reply in Russian."
+        ),
+        description=(
+            "Natural-language instruction for the LLM describing WHAT to extract "
+            "or HOW to summarise (e.g. 'Extract key reasons', 'Bullet-point main themes')."
+        ),
+    )
+    max_tokens: int = Field(
+        default=1024,
+        ge=64,
+        le=4096,
+        description="Maximum tokens the LLM may use for its response.",
+    )
+
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
+        if not self.texts:
+            return json.dumps({"error": "texts list is empty"}, ensure_ascii=False)
+
+        numbered = "\n\n".join(
+            f"[{i + 1}] {t.strip()}" for i, t in enumerate(self.texts) if t.strip()
+        )
+        user_message = (
+            f"{self.instruction}\n\n"
+            f"Texts ({len(self.texts)} total):\n\n{numbered}"
+        )
+
+        try:
+            client = AsyncOpenAI(
+                api_key=os.getenv("YANDEX_API_KEY", ""),
+                base_url=YANDEX_BASE_URL,
+            )
+            response = await client.chat.completions.create(
+                model=get_model_uri(),
+                messages=[{"role": "user", "content": user_message}],
+                max_tokens=self.max_tokens,
+                temperature=0.3,
+            )
+            summary = response.choices[0].message.content or ""
+            return json.dumps(
+                {
+                    "summary": summary,
+                    "texts_count": len(self.texts),
+                    "instruction": self.instruction,
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            logger.warning("SummarizeTextsTool failed: %s", exc)
+            return json.dumps({"error": str(exc)}, ensure_ascii=False)

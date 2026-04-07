@@ -1,6 +1,6 @@
 """Structured output SystemBaseTool classes — one per agent role.
 
-Each tool terminates the IronAgent loop by setting context.state and
+Each tool terminates the agent loop by setting context.state and
 context.execution_result, then returns a validated JSON payload.
 """
 

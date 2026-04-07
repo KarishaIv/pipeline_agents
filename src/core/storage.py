@@ -86,5 +86,13 @@ class StorageManager:
                 )
             new_data = pd.concat([existing_data, new_data])
 
+        # Deduplicate by UUID, keeping the last occurrence (most recent write wins)
+        if "UUID" in new_data.columns:
+            before = len(new_data)
+            new_data = new_data.drop_duplicates(subset=["UUID"], keep="last")
+            dropped = before - len(new_data)
+            if dropped:
+                logger.debug("Dropped %d duplicate UUID(s) in %s", dropped, path)
+
         # Сохранение данных
         new_data.to_parquet(path, index=False)

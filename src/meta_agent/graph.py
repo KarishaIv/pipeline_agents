@@ -20,10 +20,12 @@ from src.meta_agent.tools import (
     CreateChartTool,
     DataExtractionReportTool,
     ExecuteCodeTool,
+    QdrantCollectionSchema,
     QdrantFilterTool,
     QdrantRetrieveTool,
     QdrantScrollTool,
     QdrantSearchTool,
+    SummarizeTextsTool,
     SupervisorDecisionTool,
 )
 
@@ -49,7 +51,7 @@ class MetaAgentState(TypedDict):
 
 @traceable(name="node.supervisor", run_type="chain")
 async def supervisor_node(state: MetaAgentState) -> dict:
-    """Supervisor IronAgent: reviews history, assigns the next task, routes to
+    """Supervisor agent: reviews history, assigns the next task, routes to
     a worker or terminates with a final answer."""
     iterations = state.get("iterations", 0)
     history: list = state.get("history", [])
@@ -107,7 +109,7 @@ async def supervisor_node(state: MetaAgentState) -> dict:
 
 @traceable(name="node.data_extractor", run_type="chain")
 async def data_extractor_node(state: MetaAgentState) -> dict:
-    """Data-extractor IronAgent: autonomously decides which Qdrant tools and
+    """Data-extractor agent: autonomously decides which Qdrant tools and
     queries to use; reports back via DataExtractionReportTool."""
     task = (
         f"Задача от супервайзера: {state['current_task']}\n\n"
@@ -119,6 +121,7 @@ async def data_extractor_node(state: MetaAgentState) -> dict:
         task=task,
         system_prompt=EXTRACTOR_SYSTEM,
         toolkit=[
+            QdrantCollectionSchema,
             QdrantSearchTool,
             QdrantFilterTool,
             QdrantScrollTool,
@@ -146,7 +149,7 @@ async def data_extractor_node(state: MetaAgentState) -> dict:
 
 @traceable(name="node.analyzer", run_type="chain")
 async def analyzer_node(state: MetaAgentState) -> dict:
-    """Analyzer IronAgent: computes statistics, writes code, creates charts,
+    """Analyzer agent: computes statistics, writes code, creates charts,
     and reports conclusions via AnalysisReportTool."""
     prior_data = "\n\n".join(
         f"[{m['role'].upper()}]: {m['content']}"
@@ -164,6 +167,7 @@ async def analyzer_node(state: MetaAgentState) -> dict:
         task=task,
         system_prompt=ANALYZER_SYSTEM,
         toolkit=[
+            SummarizeTextsTool,
             ComputeStatsTool,
             ExecuteCodeTool,
             CreateChartTool,

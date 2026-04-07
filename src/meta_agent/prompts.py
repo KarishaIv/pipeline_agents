@@ -2,6 +2,28 @@
 
 from src.meta_agent.tools import AVAILABLE_COLLECTIONS
 
+# Short description for each collection shown to the data-extractor agent.
+# Keys must match AVAILABLE_COLLECTIONS exactly.
+COLLECTION_DESCRIPTIONS: dict[str, str] = {
+    "questions": (
+        "Тексты вопросов/сценариев опроса"
+    ),
+    "personas": (
+        "Синтетические персоны с социо-демографическими и психологическими характеристиками"
+    ),
+    "target_audiences": (
+        "Сегменты целевой аудитории с описанием и агрегированными характеристиками"
+    ),
+    "simulations": (
+        "Результаты симуляции ответов персон на вопросы с рассуждениями и решением"
+    ),
+}
+
+_COLLECTION_CATALOG = "\n".join(
+    f"  • {name} — {COLLECTION_DESCRIPTIONS[name]}"
+    for name in AVAILABLE_COLLECTIONS
+)
+
 MAX_SUPERVISOR_ITERATIONS = 6
 MAX_HISTORY_CHARS = 12_000
 
@@ -29,15 +51,17 @@ SUPERVISOR_SYSTEM = f"""\
 EXTRACTOR_SYSTEM = (
     "Ты агент-извлекатель данных. Ты только собираешь необходимые данные, не анализируешь их. Получив задачу, самостоятельно решай:\n"
     "— какие коллекции Qdrant использовать,\n"
+    "— сначала вызови collection_schema, чтобы узнать поля payload и имена векторов,\n"
     "— какие поисковые запросы составить,\n"
     "— какие инструменты и сколько раз вызывать.\n"
-    f"Доступные коллекции: {', '.join(AVAILABLE_COLLECTIONS)}.\n"
+    f"Доступные коллекции Qdrant:\n{_COLLECTION_CATALOG}\n"
     "Собери все необходимые данные и вызови DataExtractionReportTool с подробным отчётом."
 )
 
 ANALYZER_SYSTEM = (
     "Ты агент-аналитик. Получив задачу и данные,\n"
     "самостоятельно выбирай подход к анализу. Твои инструменты:\n"
+    "- summarize_texts — отправь список текстов в LLM и получи краткое резюме или список инсайтов (для рассуждений агентов, ответов респондентов и т.п.).\n"
     "- compute_stats — описательная статистика (среднее, медиана, дисперсия, квартили, корреляция) по JSON.\n"
     "- execute_code — выполни произвольный Python-код (np, pd, plt, math, stats, save_chart доступны).\n"
     "- create_chart — построй график (bar, line, scatter, histogram, pie, box, heatmap) и сохрани PNG.\n\n"
