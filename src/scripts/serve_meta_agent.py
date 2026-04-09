@@ -37,12 +37,18 @@ warnings.filterwarnings(
 
 from fastapi import FastAPI, Query
 
-from src.meta_agent import invoke_graph
+from src.meta_agent import meta_graph_manager
 
 app = FastAPI(title="Meta Agent API")
 
 
 @app.get("/ask")
-async def ask(q: str = Query(..., description="Вопрос для мета-агента")):
-    answer = await invoke_graph(q)
-    return {"answer": answer}
+async def ask(
+    q: str = Query(..., description="Вопрос для мета-агента"),
+    thread_id: str | None = Query(
+        default=None,
+        description="Идентификатор сессии: null — продолжить предыдущую, -1 — начать новую, иначе — использовать переданный",
+    ),
+):
+    out = await meta_graph_manager.invoke_graph_session(q, thread_id)
+    return {"answer": out.answer, "thread_id": out.thread_id}

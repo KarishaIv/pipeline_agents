@@ -1,5 +1,13 @@
-"""Meta-agent: supervisor-loop pipeline over ToolCallingAgent workers."""
+"""Мета-агент: конвейер с циклом супервайзера поверх ToolCallingAgent-воркеров."""
 
-from src.meta_agent.graph import build_graph, invoke_graph
+from src.meta_agent.graph import (
+    MetaAgentGraphManager,
+    MetaAgentResult,
+    meta_graph_manager,
+)
 
-__all__ = ["build_graph", "invoke_graph"]
+__all__ = [
+    "MetaAgentGraphManager",
+    "MetaAgentResult",
+    "meta_graph_manager",
+]

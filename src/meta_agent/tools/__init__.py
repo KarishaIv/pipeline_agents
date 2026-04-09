@@ -1,4 +1,4 @@
-"""Tool classes used by meta-agent workers."""
+"""Классы инструментов, используемые воркерами мета-агента."""
 
 from src.meta_agent.tools.analyzer_tools import ComputeStatsTool, CreateChartTool, ExecuteCodeTool, SummarizeTextsTool
 from src.meta_agent.tools.output_tools import (
@@ -19,17 +19,17 @@ from src.meta_agent.tools.qdrant_tools import (
 __all__ = [
     "AVAILABLE_COLLECTIONS",
     "COLLECTION_ENUM_DESC",
-    # Qdrant
+    # Инструменты Qdrant
     "QdrantCollectionSchema",
     "QdrantSearchTool",
     "QdrantFilterTool",
     "QdrantScrollTool",
     "QdrantRetrieveTool",
-    # Structured output
+    # Структурированный вывод
     "SupervisorDecisionTool",
     "DataExtractionReportTool",
     "AnalysisReportTool",
-    # Analyzer
+    # Инструменты аналитики
     "ComputeStatsTool",
     "ExecuteCodeTool",
     "CreateChartTool",

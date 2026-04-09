@@ -1,9 +1,9 @@
-"""System prompts and configuration constants for the meta-agent pipeline."""
+"""Системные промпты и конфигурационные константы пайплайна мета-агента."""
 
 from src.meta_agent.tools import AVAILABLE_COLLECTIONS
 
-# Short description for each collection shown to the data-extractor agent.
-# Keys must match AVAILABLE_COLLECTIONS exactly.
+# Краткое описание каждой коллекции, которое показывается агенту извлечения данных.
+# Ключи должны в точности совпадать с AVAILABLE_COLLECTIONS.
 COLLECTION_DESCRIPTIONS: dict[str, str] = {
     "questions": "Тексты вопросов/сценариев опроса",
     "personas": "Синтетические персоны с социо-демографическими и психологическими характеристиками",

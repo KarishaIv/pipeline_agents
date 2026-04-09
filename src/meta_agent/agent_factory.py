@@ -1,4 +1,4 @@
-"""Agent lifecycle: creation, execution, result extraction."""
+"""Жизненный цикл агента: создание, выполнение и извлечение результата."""
 
 import asyncio
 import json
@@ -13,8 +13,6 @@ from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 from sgr_agent_core.base_tool import BaseTool
 
 from config import get_model_uri, YANDEX_BASE_URL
-from src.meta_agent.prompts import MAX_HISTORY_CHARS
-
 logger = logging.getLogger("meta_agent")
 
 TRANSIENT_EXCEPTIONS = (APITimeoutError, APIConnectionError, RateLimitError, InternalServerError)
@@ -23,9 +21,9 @@ RETRY_BACKOFF = (5, 10, 30)
 
 
 class TransientError:
-    """Sentinel returned by run_agent() when all retries are exhausted on a
-    transient network/API error. Graph nodes can check for this to retry the
-    node instead of treating the error as a valid result."""
+    """Сигнал, который возвращает run_agent(), когда исчерпаны все ретраи
+    при временной сетевой/API-ошибке. Узлы графа могут проверить его и
+    переиспользовать в логике обработки вместо обычного результата."""
 
     def __init__(self, message: str, attempts: int):
         self.message = message
@@ -36,7 +34,7 @@ class TransientError:
 
 
 def _make_openai_client() -> AsyncOpenAI:
-    """Create an AsyncOpenAI client, wrapped for LangSmith tracing when enabled."""
+    """Создать AsyncOpenAI-клиент и, при включённом tracing, обернуть его для LangSmith."""
     api_key = os.getenv("YANDEX_API_KEY", "")
     client = AsyncOpenAI(api_key=api_key, base_url=YANDEX_BASE_URL)
     if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
@@ -45,7 +43,7 @@ def _make_openai_client() -> AsyncOpenAI:
 
 
 def make_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "agent") -> ToolCallingAgent:
-    """Instantiate a ToolCallingAgent backed by the Yandex LLM."""
+    """Создать экземпляр ToolCallingAgent на базе Yandex LLM."""
     api_key = os.getenv("YANDEX_API_KEY", "")
 
     cfg = AgentConfig()
@@ -64,7 +62,7 @@ def make_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "age
 
 
 def unwrap(result) -> str | None:
-    """Extract a string answer from an agent execution result."""
+    """Извлечь строковый ответ из результата выполнения агента."""
     if result is None:
         return None
     if isinstance(result, str):
@@ -75,11 +73,11 @@ def unwrap(result) -> str | None:
 
 
 async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) -> str | TransientError:
-    """Run a ToolCallingAgent with retries on transient failures.
+    """Запустить ToolCallingAgent с ретраями при временных ошибках.
 
-    Returns the agent's answer string on success, or a TransientError sentinel
-    when all retry attempts are exhausted on a transient API error.
-    Non-transient exceptions still produce a JSON error string.
+    Возвращает строку ответа агента при успехе или объект TransientError,
+    если попытки исчерпаны из-за временной API-ошибки.
+    Невременные исключения по-прежнему возвращаются как JSON-строка ошибки.
     """
     last_exc: Exception | None = None
 
@@ -107,16 +105,9 @@ async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) 
                 )
 
         except Exception as exc:
-            logger.exception("Agent '%s' failed with non-transient error", name)
+            logger.exception("Агент '%s' завершился невременной ошибкой", name)
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
 
     return TransientError(message=str(last_exc), attempts=MAX_RETRIES)
 
 
-def truncate_history(history: list) -> str:
-    """Render history to text, keeping only the tail within MAX_HISTORY_CHARS."""
-    parts = [f"[{m['role'].upper()}]: {m['content']}" for m in history]
-    text = "\n\n".join(parts)
-    if len(text) > MAX_HISTORY_CHARS:
-        text = "…(история обрезана)…\n\n" + text[-MAX_HISTORY_CHARS:]
-    return text

@@ -46,7 +46,7 @@ COLLECTIONS = [
 
 
 def _infer_schema_type(series: pd.Series) -> Optional[PayloadSchemaType]:
-    """Map a DataFrame column to a Qdrant PayloadSchemaType, or None to skip."""
+    """Сопоставить колонку DataFrame с типом Qdrant PayloadSchemaType или вернуть None для пропуска."""
     if pd.api.types.is_bool_dtype(series):
         return PayloadSchemaType.BOOL
     if pd.api.types.is_integer_dtype(series):
@@ -94,13 +94,13 @@ def _create_payload_indexes(
     df: pd.DataFrame,
     payload_keys: List[str],
 ) -> None:
-    """Create payload indexes for all indexable payload columns."""
+    """Создать payload-индексы для всех индексируемых payload-колонок."""
     for field in payload_keys:
         if field not in df.columns:
             continue
         schema_type = _infer_schema_type(df[field])
         if schema_type is None:
-            logger.info("Skip index %s.%s (non-scalar)", collection_name, field)
+            logger.info("Пропускаем индекс %s.%s (нескалярный тип)", collection_name, field)
             continue
         try:
             client.create_payload_index(
@@ -109,9 +109,9 @@ def _create_payload_indexes(
                 field_schema=schema_type,
                 wait=True,
             )
-            logger.info("Indexed %s.%s as %s", collection_name, field, schema_type.value)
+            logger.info("Создан индекс %s.%s как %s", collection_name, field, schema_type.value)
         except Exception as exc:
-            logger.warning("Failed to index %s.%s: %s", collection_name, field, exc)
+            logger.warning("Не удалось создать индекс %s.%s: %s", collection_name, field, exc)
 
 
 def create_collection_from_parquet(
@@ -187,4 +187,4 @@ def init_qdrant() -> QdrantClient:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     client = init_qdrant()
-    logger.info("Qdrant initialised, collections ready.")
+    logger.info("Qdrant инициализирован, коллекции готовы.")

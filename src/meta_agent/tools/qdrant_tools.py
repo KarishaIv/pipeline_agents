@@ -1,4 +1,4 @@
-"""Qdrant client functions and agent BaseTool wrappers."""
+"""Функции клиента Qdrant и обёртки BaseTool для агентов."""
 
 import json
 import logging
@@ -15,7 +15,7 @@ from src.utils import get_embedding
 logger = logging.getLogger("meta_agent.qdrant")
 
 # ---------------------------------------------------------------------------
-# Constants
+# Константы
 # ---------------------------------------------------------------------------
 
 AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations"]
@@ -24,14 +24,14 @@ COLLECTION_ENUM_DESC = "Имя коллекции Qdrant (как в базе): "
 CollectionName = Literal["questions", "personas", "target_audiences", "simulations"]
 
 # ---------------------------------------------------------------------------
-# Low-level Qdrant client
+# Низкоуровневый клиент Qdrant
 # ---------------------------------------------------------------------------
 
 _qdrant = QdrantClient(host="localhost", port=6333)
 
 
 def _qdrant_failure_payload(operation: str, exc: BaseException) -> str:
-    """Return JSON the agent can read instead of crashing the agent loop."""
+    """Вернуть JSON-ошибку для агента вместо падения цикла выполнения."""
 
     return json.dumps(
         {
@@ -121,8 +121,8 @@ def retrieve_by_id(collection: str, ids: List[str]) -> List[Dict[str, Any]]:
 
 
 def build_collection_schema(collection_name: str) -> Dict[str, Any]:
-    """Call ``get_collection`` and return name, status, points_count,
-    vector_names, and payload_fields (from ``payload_schema``)."""
+    """Вызвать ``get_collection`` и вернуть имя, статус, число точек,
+    имена векторов и поля payload (из ``payload_schema``)."""
     info = _qdrant.get_collection(collection_name=collection_name)
 
     params = getattr(info.config, "params", None)
@@ -150,7 +150,7 @@ def build_collection_schema(collection_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Agent BaseTool wrappers
+# Обёртки BaseTool для агента
 # ---------------------------------------------------------------------------
 
 
@@ -172,7 +172,7 @@ class QdrantCollectionSchema(BaseTool):
             result = build_collection_schema(self.collection)
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
-            logger.warning("Qdrant collection_schema failed: %s", exc)
+            logger.warning("Qdrant collection_schema завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("collection_schema", exc)
 
 
@@ -203,7 +203,7 @@ class QdrantSearchTool(BaseTool):
             )
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
-            logger.warning("Qdrant search failed: %s", exc)
+            logger.warning("Qdrant search завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("search", exc)
 
 
@@ -229,7 +229,7 @@ class QdrantFilterTool(BaseTool):
             )
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
-            logger.warning("Qdrant filter_points failed: %s", exc)
+            logger.warning("Qdrant filter_points завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("filter_points", exc)
 
 
@@ -279,7 +279,7 @@ class QdrantScrollTool(BaseTool):
             )
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
-            logger.warning("Qdrant scroll_points failed: %s", exc)
+            logger.warning("Qdrant scroll_points завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("scroll_points", exc)
 
 
@@ -298,5 +298,5 @@ class QdrantRetrieveTool(BaseTool):
             result = retrieve_by_id(collection=self.collection, ids=self.ids)
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
-            logger.warning("Qdrant retrieve_by_id failed: %s", exc)
+            logger.warning("Qdrant retrieve_by_id завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("retrieve_by_id", exc)

@@ -42,7 +42,7 @@ CODE_TIMEOUT = 30
 
 
 # ---------------------------------------------------------------------------
-# Sandbox for ExecuteCodeTool
+# Песочница для ExecuteCodeTool
 # ---------------------------------------------------------------------------
 
 _SAFE_BUILTINS: dict = {
@@ -143,7 +143,7 @@ async def _execute_safely(code: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Tools
+# Инструменты
 # ---------------------------------------------------------------------------
 
 class ComputeStatsTool(BaseTool):
@@ -408,5 +408,5 @@ class SummarizeTextsTool(BaseTool):
                 ensure_ascii=False,
             )
         except Exception as exc:
-            logger.warning("SummarizeTextsTool failed: %s", exc)
+            logger.warning("SummarizeTextsTool завершился ошибкой: %s", exc)
             return json.dumps({"error": str(exc)}, ensure_ascii=False)

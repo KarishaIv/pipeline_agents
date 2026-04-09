@@ -1,7 +1,7 @@
-"""Structured output SystemBaseTool classes — one per agent role.
+"""Классы SystemBaseTool со структурированным выводом — по одному на роль агента.
 
-Each tool terminates the agent loop by setting context.state and
-context.execution_result, then returns a validated JSON payload.
+Каждый инструмент завершает цикл агента, выставляя context.state и
+context.execution_result, после чего возвращает валидированный JSON-пейлоад.
 """
 
 from __future__ import annotations
