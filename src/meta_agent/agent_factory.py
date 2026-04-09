@@ -12,8 +12,6 @@ from sgr_agent_core import AgentConfig
 from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 from sgr_agent_core.base_tool import BaseTool
 
-import src.meta_agent.lib_patches  # noqa: F401  apply all third-party patches
-
 from config import get_model_uri, YANDEX_BASE_URL
 from src.meta_agent.prompts import MAX_HISTORY_CHARS
 
@@ -90,7 +88,7 @@ async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) 
             agent = make_agent(task, system_prompt, toolkit, name=name)
             raw = unwrap(await agent.execute())
             if raw is None:
-                return json.dumps({"error": "Agent returned no result"}, ensure_ascii=False)
+                return json.dumps({"error": "Агент не вернул результат"}, ensure_ascii=False)
             return raw
 
         except TRANSIENT_EXCEPTIONS as exc:
@@ -120,5 +118,5 @@ def truncate_history(history: list) -> str:
     parts = [f"[{m['role'].upper()}]: {m['content']}" for m in history]
     text = "\n\n".join(parts)
     if len(text) > MAX_HISTORY_CHARS:
-        text = "…(truncated)…\n\n" + text[-MAX_HISTORY_CHARS:]
+        text = "…(история обрезана)…\n\n" + text[-MAX_HISTORY_CHARS:]
     return text

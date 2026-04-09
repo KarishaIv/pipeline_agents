@@ -81,7 +81,7 @@ async def supervisor_node(state: MetaAgentState) -> dict:
         return {
             "next_worker": "end",
             "answer": "Произошла временная ошибка при обращении к LLM. Попробуйте повторить запрос позже.",
-            "history": history + [{"role": "supervisor", "content": f"[TRANSIENT ERROR] {raw}"}],
+            "history": history + [{"role": "supervisor", "content": f"[ВРЕМЕННАЯ ОШИБКА] {raw}"}],
             "iterations": iterations + 1,
         }
 
@@ -134,11 +134,11 @@ async def data_extractor_node(state: MetaAgentState) -> dict:
 
     if isinstance(raw, TransientError):
         logger.error("Data extractor hit transient error: %s", raw)
-        content = f"[TRANSIENT ERROR] Не удалось получить данные: {raw.message}"
+        content = f"[ВРЕМЕННАЯ ОШИБКА] Не удалось получить данные: {raw.message}"
     else:
         try:
             report = DataExtractionReportTool.model_validate_json(raw)
-            content = f"Summary: {report.summary}\n\nData: {report.raw_data}"
+            content = f"Кратко: {report.summary}\n\nДанные: {report.raw_data}"
         except Exception:
             content = raw
 
@@ -179,12 +179,12 @@ async def analyzer_node(state: MetaAgentState) -> dict:
 
     if isinstance(raw, TransientError):
         logger.error("Analyzer hit transient error: %s", raw)
-        content = f"[TRANSIENT ERROR] Анализ не выполнен: {raw.message}"
+        content = f"[ВРЕМЕННАЯ ОШИБКА] Анализ не выполнен: {raw.message}"
     else:
         try:
             report = AnalysisReportTool.model_validate_json(raw)
             findings_text = "\n".join(f"- {f}" for f in report.key_findings)
-            content = f"Key findings:\n{findings_text}\n\nConclusions: {report.conclusions}"
+            content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {report.conclusions}"
         except Exception:
             content = raw
 

@@ -1,9 +1,9 @@
 """
-Analytical tools for the analyzer agent:
-  - ComputeStatsTool   — descriptive statistics on JSON data
-  - ExecuteCodeTool    — safe sandboxed Python execution
-  - CreateChartTool    — matplotlib chart generation
-  - SummarizeTextsTool — LLM-based summarisation / insight extraction
+Инструменты агента-аналитика:
+  - ComputeStatsTool   — описательная статистика по JSON
+  - ExecuteCodeTool    — безопасное выполнение Python в песочнице
+  - CreateChartTool    — построение графиков matplotlib
+  - SummarizeTextsTool — резюме и инсайты через языковую модель
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def _run_code(code: str) -> tuple[str, str]:
         exec(compile(code, "<analyzer>", "exec"), namespace)  # noqa: S102
         output = stdout_buf.getvalue()
         if saved_charts:
-            output += f"\nSaved charts: {', '.join(saved_charts)}"
+            output += f"\nСохранённые графики: {', '.join(saved_charts)}"
         return output.strip(), ""
     except Exception:
         return stdout_buf.getvalue().strip(), traceback.format_exc()
@@ -137,7 +137,7 @@ async def _execute_safely(code: str) -> tuple[str, str]:
             timeout=CODE_TIMEOUT,
         )
     except asyncio.TimeoutError:
-        return "", f"Execution timed out after {CODE_TIMEOUT}s"
+        return "", f"Превышено время выполнения ({CODE_TIMEOUT} с)"
     finally:
         executor.shutdown(wait=False)
 
@@ -147,24 +147,23 @@ async def _execute_safely(code: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 class ComputeStatsTool(BaseTool):
-    """Compute descriptive statistics on a JSON dataset: mean, median, std,
-    quartiles, skewness, kurtosis, null counts, and pairwise correlation."""
+    """Описательная статистика по JSON: среднее, медиана, разброс, квартили, асимметрия, эксцесс, пропуски, корреляции."""
 
     tool_name = "compute_stats"
     description = (
-        "Compute descriptive statistics on a JSON dataset: mean, median, std, "
-        "quartiles, skewness, kurtosis, null counts, and pairwise correlation."
+        "Посчитать описательную статистику по JSON-данным: среднее, медиана, стандартное отклонение, "
+        "квартили, асимметрия, эксцесс, число пропусков и попарные корреляции числовых столбцов."
     )
 
-    reasoning: str = Field(description="Why these statistics are needed")
+    reasoning: str = Field(description="Зачем нужны эти показатели")
     data_json: str = Field(
-        description="JSON array of numbers OR array of objects (records)"
+        description="JSON-массив чисел или массив объектов (записей)"
     )
     columns: List[str] = Field(
         default=[],
         description=(
-            "Specific numeric columns to analyse when data is an array of objects. "
-            "Leave empty to analyse all numeric columns."
+            "Какие числовые столбцы анализировать, если данные — массив объектов. "
+            "Пустой список — все числовые столбцы."
         ),
     )
 
@@ -172,7 +171,7 @@ class ComputeStatsTool(BaseTool):
         try:
             raw = json.loads(self.data_json)
         except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Invalid JSON: {exc}"}, ensure_ascii=False)
+            return json.dumps({"error": f"Некорректный JSON: {exc}"}, ensure_ascii=False)
 
         try:
             if raw and isinstance(raw[0], dict):
@@ -185,7 +184,7 @@ class ComputeStatsTool(BaseTool):
 
             numeric = df.select_dtypes(include="number")
             if numeric.empty:
-                return json.dumps({"error": "No numeric columns found"}, ensure_ascii=False)
+                return json.dumps({"error": "Числовые столбцы не найдены"}, ensure_ascii=False)
 
             result = {
                 "describe": numeric.describe().round(4).to_dict(),
@@ -205,27 +204,27 @@ class ComputeStatsTool(BaseTool):
 
 
 class ExecuteCodeTool(BaseTool):
-    """Write and safely execute Python code for custom analysis.
+    """Безопасное выполнение Python-кода для произвольного анализа.
 
-    Available in the sandbox: np, pd, plt, math, json, stats, save_chart().
-    Call save_chart('name.png') to persist a matplotlib figure.
-    No file I/O or external imports are allowed.
+    В песочнице: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart().
+    Вызов save_chart('имя.png') сохраняет текущий график matplotlib.
+    Запрещены произвольный доступ к файлам и внешние import.
     """
 
     tool_name = "execute_code"
     description = (
-        "Write and safely execute Python code for custom analysis. "
-        "Available in sandbox: np, pd, plt, math, json, stats, save_chart(). "
-        "No file I/O or external imports allowed."
+        "Написать и безопасно выполнить код на Python для анализа. "
+        "В песочнице доступны: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart(). "
+        "Нельзя читать/писать файлы и подключать внешние модули."
     )
 
-    reasoning: str = Field(description="What this code computes and why")
+    reasoning: str = Field(description="Что вычисляет код и зачем")
     code: str = Field(
         description=(
-            "Valid Python code. "
-            "Pre-imported: np, pd, plt, math, json, stats. "
-            "Call save_chart('filename.png') to save a plot. "
-            "Use print() for output — stdout is captured and returned."
+            "Корректный код на Python. "
+            "Уже импортированы: np (numpy), pd (pandas), plt (matplotlib), math, json, stats. "
+            "Для сохранения графика вызови save_chart('файл.png'). "
+            "Вывод — через print(); stdout возвращается в ответе инструмента."
         )
     )
 
@@ -237,35 +236,36 @@ class ExecuteCodeTool(BaseTool):
         if error:
             result["error"] = error
         if not result:
-            result["output"] = "(no output)"
+            result["output"] = "(нет вывода)"
         return json.dumps(result, ensure_ascii=False)
 
 
 class CreateChartTool(BaseTool):
-    """Create and save a matplotlib chart from a JSON dataset.
-    Returns the path to the saved PNG file."""
+    """Построить и сохранить график matplotlib по JSON-данным; вернуть путь к PNG."""
 
     tool_name = "create_chart"
-    description = "Create and save a matplotlib chart (bar, line, scatter, histogram, pie, box, heatmap) from a JSON dataset."
+    description = (
+        "Построить и сохранить график matplotlib (bar, line, scatter, histogram, pie, box, heatmap) по JSON-данным."
+    )
 
-    reasoning: str = Field(description="What this chart visualises and why")
+    reasoning: str = Field(description="Что показывает график и зачем он нужен")
     chart_type: Literal["bar", "line", "scatter", "histogram", "pie", "box", "heatmap"] = Field(
-        description="Chart type"
+        description="Тип графика (bar, line, scatter, histogram, pie, box, heatmap)"
     )
     data_json: str = Field(
-        description="JSON array of numbers OR array of objects (records)"
+        description="JSON-массив чисел или массив объектов (записей)"
     )
-    title: str = Field(description="Chart title")
-    x_column: str = Field(default="", description="Column for x-axis / labels")
-    y_column: str = Field(default="", description="Column for y-axis / values")
-    x_label: str = Field(default="", description="x-axis label")
-    y_label: str = Field(default="", description="y-axis label")
+    title: str = Field(description="Заголовок графика")
+    x_column: str = Field(default="", description="Столбец для оси X / подписей")
+    y_column: str = Field(default="", description="Столбец для оси Y / значений")
+    x_label: str = Field(default="", description="Подпись оси X")
+    y_label: str = Field(default="", description="Подпись оси Y")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
             raw = json.loads(self.data_json)
         except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Invalid JSON: {exc}"}, ensure_ascii=False)
+            return json.dumps({"error": f"Некорректный JSON: {exc}"}, ensure_ascii=False)
 
         CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -341,52 +341,50 @@ class CreateChartTool(BaseTool):
 
 
 class SummarizeTextsTool(BaseTool):
-    """Summarise or extract insights from a list of texts using the LLM.
+    """Краткое изложение или извлечение инсайтов из списка текстов через языковую модель.
 
-    Useful for distilling agents' reasoning logs, survey responses, textual
-    records, or any collection of free-form strings into a compact summary or
-    structured bullet-point insights.
+    Удобно для рассуждений агентов, ответов опроса, длинных записей и любых текстовых массивов.
     """
 
     tool_name = "summarize_texts"
     description = (
-        "Send a list of texts to the LLM with a custom instruction and return a "
-        "concise summary or bullet-point insights. "
-        "Use for summarising agents' reasonings, survey answers, or any text corpus."
+        "Отправить список текстов в языковую модель с инструкцией и получить "
+        "краткое резюме или список инсайтов."
+        "Применяй для рассуждений агентов, ответов респондентов и любых текстовых корпусов."
     )
 
-    reasoning: str = Field(description="Why summarisation is needed and what insights to extract")
+    reasoning: str = Field(description="Зачем нужно резюме и какие инсайты извлечь")
     texts: List[str] = Field(
-        description="List of texts to summarise (e.g. reasoning logs, survey responses, records)",
+        description="Список текстов целиком для обработки (рассуждения, ответы опроса, записи и т.д.)",
         min_length=1,
     )
     instruction: str = Field(
         default=(
-            "Summarise the provided texts and extract the most important insights, "
-            "patterns, and conclusions. Reply in Russian."
+            "Кратко изложи тексты и выдели главные инсайты, закономерности и выводы. "
+            "Отвечай на русском языке."
         ),
         description=(
-            "Natural-language instruction for the LLM describing WHAT to extract "
-            "or HOW to summarise (e.g. 'Extract key reasons', 'Bullet-point main themes')."
+            "Инструкция на естественном языке: что извлечь или как обобщить "
+            "(например: «Выдели ключевые причины», «Тезисы по основным темам»)."
         ),
     )
     max_tokens: int = Field(
         default=1024,
         ge=64,
         le=4096,
-        description="Maximum tokens the LLM may use for its response.",
+        description="Максимум токенов в ответе языковой модели.",
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         if not self.texts:
-            return json.dumps({"error": "texts list is empty"}, ensure_ascii=False)
+            return json.dumps({"error": "Список текстов пуст"}, ensure_ascii=False)
 
         numbered = "\n\n".join(
             f"[{i + 1}] {t.strip()}" for i, t in enumerate(self.texts) if t.strip()
         )
         user_message = (
             f"{self.instruction}\n\n"
-            f"Texts ({len(self.texts)} total):\n\n{numbered}"
+            f"Тексты (всего {len(self.texts)}):\n\n{numbered}"
         )
 
         try:

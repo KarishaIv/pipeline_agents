@@ -19,7 +19,7 @@ logger = logging.getLogger("meta_agent.qdrant")
 # ---------------------------------------------------------------------------
 
 AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations"]
-COLLECTION_ENUM_DESC = "Collection name: " + ", ".join(AVAILABLE_COLLECTIONS)
+COLLECTION_ENUM_DESC = "Имя коллекции Qdrant (как в базе): " + ", ".join(AVAILABLE_COLLECTIONS)
 
 CollectionName = Literal["questions", "personas", "target_audiences", "simulations"]
 
@@ -34,7 +34,11 @@ def _qdrant_failure_payload(operation: str, exc: BaseException) -> str:
     """Return JSON the agent can read instead of crashing the agent loop."""
 
     return json.dumps(
-        {"error": "qdrant_request_failed", "operation": operation, "detail": str(exc)},
+        {
+            "error": "ошибка_запроса_qdrant",
+            "operation": operation,
+            "detail": str(exc),
+        },
         ensure_ascii=False,
     )
 
@@ -151,16 +155,16 @@ def build_collection_schema(collection_name: str) -> Dict[str, Any]:
 
 
 class QdrantCollectionSchema(BaseTool):
-    """Return collection metadata: name, status, points_count, vector_names, and payload fields."""
+    """Метаданные коллекции: имя, статус, число точек, векторы, поля payload."""
 
     tool_name = "collection_schema"
     description = (
-        "Return collection_name, status, points_count, vector_names, and payload_fields "
-        "(field data_type and indexed points count) via Qdrant get_collection API. "
-        "Call first to discover available fields and vectors before search/filter."
+        "Вернуть имя коллекции, статус, число точек, имена векторов и поля payload "
+        "(тип данных). "
+        "Вызывай в первую очередь, чтобы узнать поля и векторы перед поиском и фильтрацией."
     )
 
-    reasoning: str = Field(description="Why you need this collection's schema now")
+    reasoning: str = Field(description="Зачем сейчас нужна схема этой коллекции")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
 
     async def __call__(self, context, config, **_) -> str:
@@ -173,24 +177,21 @@ class QdrantCollectionSchema(BaseTool):
 
 
 class QdrantSearchTool(BaseTool):
-    """Semantic search over a Qdrant collection via cosine similarity."""
+    """Семантический поиск по коллекции Qdrant (сходство векторов)."""
 
     tool_name = "search"
-    description = "Semantic search over a Qdrant collection via cosine similarity."
+    description = "Семантический поиск по коллекции Qdrant по текстовому запросу (векторное сходство)."
 
-    reasoning: str = Field(description="Why this search is needed")
+    reasoning: str = Field(description="Зачем нужен этот поиск")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    query: str = Field(description="Natural-language search string")
+    query: str = Field(description="Поисковая фраза на естественном языке")
     vector_name: str = Field(
         default="embedding",
         description=(
-            "Named vector to search against. "
-            "questions/personas/target_audiences use 'embedding'. "
-            "simulations uses: emotional_vector, rational_vector, "
-            "social_vector, ideological_vector, decision_vector, general_vector"
+            "Имя вектора для поиска (из поля vector_names из схемы коллекции)."
         ),
     )
-    limit: int = Field(default=5, description="Maximum number of results")
+    limit: int = Field(default=5, description="Максимальное количество возвращаемых результатов")
 
     async def __call__(self, context, config, **_) -> str:
         try:
@@ -207,16 +208,16 @@ class QdrantSearchTool(BaseTool):
 
 
 class QdrantFilterTool(BaseTool):
-    """Filter a Qdrant collection by an exact payload field match."""
+    """Точное совпадение значения поля payload в коллекции Qdrant."""
 
     tool_name = "filter_points"
-    description = "Filter a Qdrant collection by an exact payload field match."
+    description = "Отобрать точки коллекции по точному совпадению значения поля payload."
 
-    reasoning: str = Field(description="Why this filter is needed")
+    reasoning: str = Field(description="Зачем нужна эта фильтрация")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    field: str = Field(description='Payload field name to filter on (e.g. "question", "name")')
-    value: str = Field(description="Expected exact value of the field")
-    limit: int = Field(default=10, description="Maximum number of results")
+    field: str = Field(description='Имя поля payload для фильтра (например "question", "name")')
+    value: str = Field(description="Ожидаемое точное значение поля")
+    limit: int = Field(default=10, description="Максимальное количество возвращаемых результатов")
 
     async def __call__(self, context, config, **_) -> str:
         try:
@@ -233,37 +234,37 @@ class QdrantFilterTool(BaseTool):
 
 
 class QdrantScrollTool(BaseTool):
-    """Paginated scroll through all points in a Qdrant collection with optional field selection and filtering."""
+    """Постраничный обход точек коллекции с выбором полей и опциональным фильтром."""
 
     tool_name = "scroll_points"
     description = (
-        "Paginated scroll through all points in a Qdrant collection. "
-        "Supports returning only specific payload fields (payload_fields) "
-        "and filtering by an exact payload field value (filter_field + filter_value)."
+        "Постраничный обход точек коллекции Qdrant. "
+        "Можно вернуть только указанные поля payload (payload_fields) "
+        "и отфильтровать по точному совпадению поля (filter_field и filter_value)."
     )
 
-    reasoning: str = Field(description="Why paginated scroll is needed")
+    reasoning: str = Field(description="Зачем нужен постраничный обход")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    limit: int = Field(default=10, description="Page size")
+    limit: int = Field(default=10, description="Размер страницы (число точек)")
     offset: Optional[str] = Field(
         default=None,
-        description="UUID string to start from (value of next_offset returned by the previous scroll call)",
+        description="Смещение для продолжения: значение next_offset из предыдущего вызова scroll",
     )
     payload_fields: List[str] = Field(
         default=[],
         description=(
-            "Return only these payload fields per point. "
-            "Leave empty to return all fields. "
-            "Example: [\"region\", \"age_group\"]"
+            "Вернуть только эти поля payload для каждой точки. "
+            "Пустой список — вернуть все поля. "
+            "Пример: [\"region\", \"age_group\"]"
         ),
     )
     filter_field: Optional[str] = Field(
         default=None,
-        description="Payload field name to filter on (exact match). Must be set together with filter_value.",
+        description="Имя поля payload для фильтра (точное совпадение). Задавай вместе с filter_value.",
     )
     filter_value: Optional[str] = Field(
         default=None,
-        description="Exact value the filter_field must equal.",
+        description="Значение, которому должно равняться filter_field.",
     )
 
     async def __call__(self, context, config, **_) -> str:
@@ -283,14 +284,14 @@ class QdrantScrollTool(BaseTool):
 
 
 class QdrantRetrieveTool(BaseTool):
-    """Retrieve specific points from a Qdrant collection by their UUID string IDs."""
+    """Получить точки коллекции по списку идентификаторов (строки UUID)."""
 
     tool_name = "retrieve_by_id"
-    description = "Retrieve specific points from a Qdrant collection by their UUID string IDs."
+    description = "Загрузить указанные точки из коллекции Qdrant по их идентификаторам (строки UUID)."
 
-    reasoning: str = Field(description="Why these specific points are needed")
+    reasoning: str = Field(description="Зачем нужны именно эти точки")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    ids: List[str] = Field(description="List of UUID string point IDs to retrieve")
+    ids: List[str] = Field(description="Список идентификаторов точек (UUID в виде строк) для загрузки")
 
     async def __call__(self, context, config, **_) -> str:
         try:

@@ -18,32 +18,34 @@ if TYPE_CHECKING:
 
 
 class SupervisorDecisionTool(SystemBaseTool):
-    """Record the supervisor's routing decision and terminate the supervisor step."""
+    """Зафиксировать решение супервайзера о маршрутизации и завершить его шаг."""
 
     tool_name = "supervisor_decision"
-    description = "Record the supervisor's routing decision and terminate the supervisor step."
+    description = (
+        "Зафиксировать решение супервайзера о следующем шаге (какого агента вызвать "
+        "или завершить) и завершить текущий шаг супервайзера."
+    )
 
     reasoning: str = Field(
-        description="Analysis of the current state and justification for this decision"
+        description="Анализ текущего состояния и обоснование решения"
     )
     next: Literal["data_extractor", "analyzer", "end"] = Field(
         description=(
-            "Which worker to call next: "
-            "'data_extractor' to fetch more data, "
-            "'analyzer' to synthesise what was collected, "
-            "'end' when the question is fully answered"
+            "Какой исполнитель следующий: "
+            "data_extractor — получить или уточнить данные из Qdrant; "
+            "analyzer — проанализировать уже собранное; "
+            "end — вопрос пользователя полностью закрыт, можно отвечать"
         )
     )
     task: str = Field(
         description=(
-            "High-level task description for the chosen worker. "
-            "State WHAT needs to be done, not HOW. "
-            "Leave empty when next='end'."
+            "Краткая формулировка задачи для выбранного агента: ЧТО сделать, не КАК. "
+            "Пустая строка, если next=end."
         )
     )
     final_answer: str = Field(
         default="",
-        description="Complete answer for the user — filled only when next='end'",
+        description="Полный ответ пользователю на русском — только при next=end",
     )
 
     async def __call__(self, context: AgentContext, config, **_) -> str:
@@ -54,25 +56,28 @@ class SupervisorDecisionTool(SystemBaseTool):
 
 
 class DataExtractionReportTool(SystemBaseTool):
-    """Report structured findings after Qdrant data extraction and terminate the extractor step."""
+    """Структурированный отчёт после извлечения данных из Qdrant; завершает шаг извлекателя."""
 
     tool_name = "data_extraction_report"
-    description = "Report structured findings after Qdrant data extraction and terminate the extractor step."
+    description = (
+        "Передать структурированные результаты извлечения данных из Qdrant "
+        "и завершить шаг агента-извлекателя."
+    )
 
-    reasoning: str = Field(description="What was searched, which collections, and why")
+    reasoning: str = Field(description="Что искали, в каких коллекциях и зачем")
     completed_steps: List[str] = Field(
-        description="Ordered list of extraction steps performed",
+        description="Упорядоченный список выполненных шагов извлечения",
         min_length=1,
         max_length=10,
     )
     summary: str = Field(
-        description="Concise human-readable summary of what was found"
+        description="Все, полученное в результате извлечения данных, в виде JSON-строки"
     )
     raw_data: str = Field(
-        description="All retrieved records serialised as a JSON string"
+        description="Сырые данные, извлечённые из Qdrant, в виде JSON-строки"
     )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
-        description="Extraction status"
+        description="Статус извлечения: успех или сбой"
     )
 
     async def __call__(self, context: AgentContext, config, **_) -> str:
@@ -83,25 +88,27 @@ class DataExtractionReportTool(SystemBaseTool):
 
 
 class AnalysisReportTool(SystemBaseTool):
-    """Report structured analytical conclusions and terminate the analyzer step."""
+    """Структурированные аналитические выводы; завершает шаг аналитика."""
 
     tool_name = "analysis_report"
-    description = "Report structured analytical conclusions and terminate the analyzer step."
+    description = (
+        "Передать итоговые структурированные выводы анализа и завершить шаг агента-аналитика."
+    )
 
-    reasoning: str = Field(description="Analytical approach and methodology used")
+    reasoning: str = Field(description="Выбранный подход и методика анализа")
     completed_steps: List[str] = Field(
-        description="Ordered list of analysis steps performed",
+        description="Упорядоченный список выполненных шагов анализа",
         min_length=1,
         max_length=10,
     )
     key_findings: List[str] = Field(
-        description="Key findings and patterns identified from the data"
+        description="Ключевые находки и закономерности по данным"
     )
     conclusions: str = Field(
-        description="Comprehensive analytical conclusions in Russian"
+        description="Развёрнутые аналитические выводы на русском языке"
     )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
-        description="Analysis status"
+        description="Статус анализа: успех или сбой"
     )
 
     async def __call__(self, context: AgentContext, config, **_) -> str:
