@@ -69,4 +69,9 @@ def preprocess_pgm_data(df):
     
     df_prep['region'] = df['region'].apply(lambda x : 'Регион миллионник' if x in PGM_CONFIG['rich_regions'] else 'Бедный регион')
 
+    # pgmpy плохо работает с pandas StringDtype; приводим дискретные признаки к category
+    for col in ['gender', 'marital_status', 'children_group', 'education', 'occupation', 'region', 'income_level']:
+        if col in df_prep.columns:
+            df_prep[col] = df_prep[col].astype('category')
+
     return df_prep

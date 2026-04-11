@@ -4,7 +4,10 @@ warnings.filterwarnings('ignore')
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from src.orchestration import PipelineRunner
 from config import *
@@ -22,16 +25,19 @@ def setup_logging():
 
 def parse_arguments():
     """Парсинг аргументов командной строки"""
+    # Load .env if present so defaults can be pulled from env vars
+    load_dotenv()
+
     parser = argparse.ArgumentParser(
         description='Credit Decision Prediction Pipeline with Multi-Agent Simulation'
     )
     
     parser.add_argument('--evidence', type=str, default='./data/evidence.json',
                         help='Path to JSON file with evidence data')
-    parser.add_argument('--api_key', type=str, required=True, 
-                        help='Yandex GPT API key')
-    parser.add_argument('--folder_id', type=str, default=None,
-                        help='Yandex Cloud Folder ID (if not provided, will use api_key)')
+    parser.add_argument('--api_key', type=str, default=os.getenv("OPENAI_API_KEY"),
+                        help='Yandex GPT API key (or set OPENAI_API_KEY in .env)')
+    parser.add_argument('--folder_id', type=str, default=os.getenv("YANDEX_FOLDER_ID"),
+                        help='Yandex Cloud Folder ID (or set YANDEX_FOLDER_ID in .env)')
     parser.add_argument('--nemo_size', type=int, default=DEFAULT_NEMO_SIZE,
                         help='Size of Nemotron dataset to use')
     parser.add_argument('--output', type=str, default='outputs/',
@@ -47,6 +53,19 @@ def parse_arguments():
     parser.add_argument('--agent_mode', type=str, default='credit', 
                         choices=['credit', 'survey'],
                         help="Agent simulation mode")
+    parser.add_argument('--decision-mode', type=str, default='direct',
+                        choices=['direct', 'compact_debate'],
+                        help='Decision mode for credit agent reasoning')
+    parser.add_argument('--survey-mode', type=str, default='legacy',
+                        choices=['legacy', 'structured'],
+                        help='Survey reasoning mode inside agent_mode=survey')
+    parser.add_argument('--news-context-path', type=str, default=None,
+                        help='Optional path to a news-context JSON snapshot for compact_debate or structured survey runtime')
+    parser.add_argument('--visualize-sample', type=int, default=5,
+                        help='Number of per-person emotion charts to save (credit mode). 0 disables.')
+    parser.add_argument('--no-summary-visualize', dest='summary_visualize', action='store_false',
+                        help='Disable summary emotions chart (credit mode)')
+    parser.set_defaults(summary_visualize=True)
     parser.add_argument('--use_pgm', action='store_true',  default=True,
                         help='Use PGM for synthetic data generation (default: True)')
     parser.add_argument('--no-pgm', action='store_false', dest='use_pgm',
@@ -63,7 +82,12 @@ def main():
     args = parse_arguments()
     
     setup_logging()
-    set_openai_api_key(args.api_key, args.folder_id)
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    folder_id = args.folder_id or os.getenv("YANDEX_FOLDER_ID")
+    if not api_key:
+        raise SystemExit("API key not provided. Use --api_key or set OPENAI_API_KEY in .env.")
+
+    set_openai_api_key(api_key, folder_id)
     
     pipeline_config = {
         'evidence': args.evidence,
@@ -74,8 +98,13 @@ def main():
         'timeout': args.timeout,
         'ta_concurrency': args.ta_concurrency,
         'agent_mode': args.agent_mode,
+        'decision_mode': args.decision_mode,
+        'survey_mode': args.survey_mode,
+        'news_context_path': args.news_context_path,
         'use_pgm': args.use_pgm,
         "ocean_flag": args.oceanflag,
+        "visualize_sample": args.visualize_sample,
+        "summary_visualize": args.summary_visualize,
     }
     
     runner = PipelineRunner(pipeline_config)

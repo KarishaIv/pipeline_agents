@@ -61,6 +61,8 @@ class StorageManager:
             "run_id": run_id,
             "profile_name": result.get("profile", {}).get("name"),
             "final_decision": result.get("decision", {}).get("will_take_credit") if isinstance(result.get("decision"), dict) else None,
+            "decision_mode": result.get("decision_mode") or result.get("decision", {}).get("decision_mode"),
+            "news_snapshot_id": result.get("news_context", {}).get("snapshot_id") if isinstance(result.get("news_context"), dict) else None,
             "timestamp": datetime.utcnow().isoformat()
         }
         await StorageManager.append_line_async(out_dir / "runs_index.log", json.dumps(summary, ensure_ascii=False))
@@ -129,6 +131,7 @@ class StorageManager:
             "run_id": run_id,
             "profile_name": profile.get("name", "unknown"),
             "persona_id": profile.get("persona_id", "unknown"),
+            "survey_mode": result.get("survey_mode", "legacy"),
             "total_questions": len(survey_questions),
             "agreement_count": agreement_count,
             "disagreement_count": disagreement_count,
@@ -147,6 +150,7 @@ class StorageManager:
                 "run_id": run_id,
                 "profile_name": summary["profile_name"],
                 "persona_id": summary["persona_id"],
+                "survey_mode": summary["survey_mode"],
                 "agreement_count": agreement_count,
                 "disagreement_count": disagreement_count,
                 "agreement_percent": summary["agreement_percent"],

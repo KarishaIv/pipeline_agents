@@ -141,6 +141,11 @@ class PipelineRunner:
         logger.info("🤖 Running multi-agent simulations...")
         
         personas = [all_personas.iloc[i].to_dict() for i in range(len(all_personas))]
+        news_context = None
+        news_context_path = self.config.get('news_context_path')
+        if news_context_path:
+            with open(news_context_path, 'r', encoding='utf-8') as f:
+                news_context = json.load(f)
         
         manager = SimulationManager(
             out_dir=self.output_dir,
@@ -149,7 +154,12 @@ class PipelineRunner:
             visualize=(self.config['agent_mode'] == 'credit'),
             run_retries=1,
             agent_mode=self.config['agent_mode'],
-            survey_questions=datasets.get('survey_questions', [])
+            decision_mode=self.config.get('decision_mode', 'direct'),
+            survey_mode=self.config.get('survey_mode', 'legacy'),
+            news_context=news_context,
+            survey_questions=datasets.get('survey_questions', []),
+            visualize_sample=self.config.get('visualize_sample', 0),
+            summary_visualize=self.config.get('summary_visualize', True)
         )
         
         timestamp = datetime.now().strftime("%m%d_%H%M%S")
