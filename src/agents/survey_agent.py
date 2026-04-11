@@ -357,7 +357,7 @@ class PersonaAgent(ABC):
         
         except Exception as e:
             logger.error(f"[{self.agent_name}] ❌ Failed after retries: {str(e)}")
-            return
+            raise RuntimeError(f"{self.agent_name} agent failed to produce a response") from e
 
 class EmotionalAgent(PersonaAgent):
     

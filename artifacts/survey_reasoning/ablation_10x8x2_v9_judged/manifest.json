@@ -1,0 +1,107 @@
+{
+  "profiles_glob": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_*.json",
+  "selected_profiles": [
+    {
+      "persona_id": null,
+      "name": "profile_845_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_845_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_512_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_512_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_31_20260206_022550",
+      "target_audience_name": "fathers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_31_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_819_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_819_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_547_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_547_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_750_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_750_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_670_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_670_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_789_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_789_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_472_20260206_022550",
+      "target_audience_name": "fathers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_472_20260206_022550.json"
+    },
+    {
+      "persona_id": null,
+      "name": "profile_906_20260206_022550",
+      "target_audience_name": "mothers",
+      "profile_path": "/Users/timofeysukhoparov/Documents/cursach/pipeline_agents-git/outputs/profile_906_20260206_022550.json"
+    }
+  ],
+  "selected_questions": [
+    {
+      "index": 0,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Покупка акций и ценных бумаг слишком рискованна для меня"
+    },
+    {
+      "index": 1,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением 'Я стараюсь не брать деньги в долг'"
+    },
+    {
+      "index": 2,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я чувствую себя финансово обеспеченным(ной)"
+    },
+    {
+      "index": 3,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я доверяю информации в газетах"
+    },
+    {
+      "index": 4,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я покупаю вещи скорее удобные, чем модные"
+    },
+    {
+      "index": 5,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Меня раздражает реклама"
+    },
+    {
+      "index": 6,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Я хожу на работу прежде всего из-за денег"
+    },
+    {
+      "index": 7,
+      "question": "Вам интервьюер Росиндекса задает вопрос: Согласны ли вы с утверждением: Мне интересны люди и обычаи других культур"
+    }
+  ],
+  "survey_modes": [
+    "legacy",
+    "structured"
+  ],
+  "repeats": 2,
+  "concurrency": 1,
+  "seed": 42,
+  "news_context_path": null
+}
