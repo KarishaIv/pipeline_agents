@@ -1,0 +1,69 @@
+{
+  "n_rows": 70,
+  "n_labeled": 56,
+  "accuracy": 0.625,
+  "macro_f1": 0.49166666666666664,
+  "accuracy_by_domain": {
+    "complex_emotions": {
+      "accuracy": 1.0,
+      "n": 7
+    },
+    "emotional_cues": {
+      "accuracy": 1.0,
+      "n": 14
+    },
+    "personal_beliefs_and_experiences": {
+      "accuracy": 0.5,
+      "n": 14
+    },
+    "perspective_taking": {
+      "accuracy": 0.3333333333333333,
+      "n": 21
+    }
+  },
+  "accuracy_by_taxonomy": {
+    "cultural_value:emotion": {
+      "accuracy": 1.0,
+      "n": 7
+    },
+    "false_belief:emotion": {
+      "accuracy": 0.0,
+      "n": 7
+    },
+    "faux_pas:cause": {
+      "accuracy": 1.0,
+      "n": 7
+    },
+    "mixture_of_emotions:cause": {
+      "accuracy": 1.0,
+      "n": 7
+    },
+    "persona:emotion": {
+      "accuracy": 0.0,
+      "n": 7
+    },
+    "strange_story:emotion": {
+      "accuracy": 0.0,
+      "n": 7
+    },
+    "vocal_cues:cause": {
+      "accuracy": 1.0,
+      "n": 7
+    },
+    "vocal_cues:emotion": {
+      "accuracy": 1.0,
+      "n": 7
+    }
+  },
+  "benchmark": "emobench",
+  "locale": "en",
+  "persona_sample": 7,
+  "items_per_persona": 10,
+  "partial": true,
+  "quota": {
+    "calls_made": 70,
+    "max_calls": 70,
+    "elapsed_seconds": 15.204,
+    "max_runtime_seconds": 3600.0
+  }
+}

@@ -26,3 +26,10 @@ logs/
 **sqlite3-shm**
 **sqlite3-wal**
 **.egg**
+
+.venv312/
+_canonical_repo/
+outputs/
+data/benchmark/
+data/benchmark_external/
+pipeline.log
