@@ -9,3 +9,9 @@ __pycache__/
 .env
 .venv
 Basic PGM.ipynb
+.venv312/
+_canonical_repo/
+outputs/
+data/benchmark/
+data/benchmark_external/
+pipeline.log

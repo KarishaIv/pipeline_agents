@@ -1,0 +1,41 @@
+{
+  "n_trait_rows": 35,
+  "trait_mae": 0.26325396825396824,
+  "trait_spearman": 0.9316907604450907,
+  "behavior_consistency_mean": 4.98,
+  "personallm_composite_score": 96.53439627196843,
+  "trait_mae_by_trait": {
+    "agreeableness": {
+      "mae": 0.14285714285714274,
+      "n": 7
+    },
+    "conscientiousness": {
+      "mae": 0.6984126984126984,
+      "n": 7
+    },
+    "extraversion": {
+      "mae": 0.125,
+      "n": 7
+    },
+    "neuroticism": {
+      "mae": 0.03571428571428571,
+      "n": 7
+    },
+    "openness": {
+      "mae": 0.3142857142857142,
+      "n": 7
+    }
+  },
+  "benchmark": "personallm_protocol",
+  "locale": "en",
+  "persona_sample": 7,
+  "n_bfi_items": 44,
+  "n_behavior_scenarios": 5,
+  "partial": false,
+  "quota": {
+    "calls_made": 378,
+    "max_calls": 378,
+    "elapsed_seconds": 282.995,
+    "max_runtime_seconds": 5400.0
+  }
+}
