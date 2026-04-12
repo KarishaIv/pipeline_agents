@@ -6,9 +6,10 @@ from typing import Iterable, List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-import numpy as np
-
-from src.agents.multi_agent import MultiAgentSystem
+try:
+    from src.agents.multi_agent import MultiAgentSystem
+except ImportError:
+    MultiAgentSystem = None
 from src.agents.survey_agent import MultiAgentReasoner
 from src.agents.structured_survey_reasoner import StructuredSurveyReasoner
 from src.core.storage import StorageManager

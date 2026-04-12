@@ -59,7 +59,7 @@ def preprocess_pgm_data(df):
     income_labels = PGM_CONFIG.get('income_labels', None)
     
     if income_bins is not None and income_labels is not None:
-        df_prep['income_level'] = pd.to_numeric(df['income'], errors='coerce').parallel_apply(
+        df_prep['income_level'] = pd.to_numeric(df['income'], errors='coerce').apply(
             lambda x: get_income_range(x, income_bins, income_labels)
         )
     

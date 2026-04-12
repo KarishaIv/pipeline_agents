@@ -18,8 +18,6 @@ from news_enricher import NewsContextEnricher
 
 from config import *
 import pandas as pd
-from pandarallel import pandarallel
-pandarallel.initialize(progress_bar=False, nb_workers=4)
 
 logger = logging.getLogger(__name__)
 
