@@ -6,7 +6,10 @@ from typing import Iterable, List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from src.agents.multi_agent import MultiAgentSystem
+try:
+    from src.agents.multi_agent import MultiAgentSystem
+except ImportError:
+    MultiAgentSystem = None
 from src.agents.survey_agent import MultiAgentReasoner
 from src.core.storage import StorageManager
 from src.core.visualization import EmotionalVisualizer

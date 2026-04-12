@@ -87,7 +87,7 @@ async def robust_llm_call(prompt: str, model = None, temperature: float = 0.5, s
         model = LLM_MODEL
     
     # Настройка Yandex GPT
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("YANDEX_API_KEY") or os.getenv("OPENAI_API_KEY")
     folder_id = os.getenv("YANDEX_FOLDER_ID")
     
     # Создаем YandexLLM с folder_id только если он указан
@@ -352,19 +352,15 @@ def translate_ocean_score(score: Optional[float], dimension: str) -> str:
         return "неизвестное измерение"
 
 
-from pandarallel import pandarallel
-import pandas as pd
-pandarallel.initialize(progress_bar=False, nb_workers=4) 
-
 def translate_ocean_to_readable(df: pd.DataFrame) -> pd.DataFrame:
     result_df = df.copy()
-    
+
     dimensions = ["openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"]
-    
+
     for dim in dimensions:
         if dim in df.columns:
-            result_df[f"{dim}"] = df[dim].parallel_apply(
-                lambda x: translate_ocean_score(x, dim)
+            result_df[f"{dim}"] = df[dim].apply(
+                lambda x, d=dim: translate_ocean_score(x, d)
             )
             
     return result_df

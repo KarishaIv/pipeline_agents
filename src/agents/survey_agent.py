@@ -58,18 +58,18 @@ class GraphState(TypedDict):
     persona_id: str
     scenario: str
     persona_context: Dict[str, Any]
-    
+
 
     emotional_history: List[Dict[str, str]]
     rational_history: List[Dict[str, str]]
     social_history: List[Dict[str, str]]
     ideological_history: List[Dict[str, str]]
-    
+
 
     generation_count: int
     max_generations: int
     current_agent: str
-    
+
 
     final_decision: Optional[DecisionOutput]
 
@@ -296,6 +296,27 @@ class PersonaAgent(ABC):
             "neuroticism": persona_context.get("neuroticism_readable", "не указано"),
         }
     
+    def _extract_news_context(self, persona_context: Dict[str, Any], world_context: Dict = None) -> str:
+        ctx = world_context if world_context else persona_context.get("news_context", {})
+        if not ctx:
+            return ""
+
+        lines = []
+        if ctx.get("overall_reaction"):
+            lines.append(f"Общий знак фона: {ctx['overall_reaction']} (горизонт: {ctx.get('impact_horizon', '?')})")
+        if ctx.get("factors"):
+            lines.append("Ключевые факторы: " + "; ".join(ctx["factors"]))
+        if ctx.get("risks"):
+            lines.append("Риски: " + "; ".join(ctx["risks"]))
+        if ctx.get("opportunities"):
+            lines.append("Возможности: " + "; ".join(ctx["opportunities"]))
+        if ctx.get("summary_text"):
+            lines.append(ctx["summary_text"])
+
+        if not lines:
+            return ""
+        return "\nАКТУАЛЬНЫЙ НОВОСТНОЙ КОНТЕКСТ:\n" + "\n".join(f"- {l}" for l in lines) + "\n"
+
     def _format_history(self, state: Dict[str, Any]) -> str:
         history_text = []
         
@@ -376,10 +397,10 @@ class EmotionalAgent(PersonaAgent):
     ) -> str:
         info = self._extract_persona_info(persona_context)
         ocean = self._extract_ocean(persona_context)
-        
+        news_ctx = self._extract_news_context(persona_context)
         return f"""СЦЕНАРИЙ:
 {scenario}
-
+{news_ctx}
 ПРОФИЛЬ ПЕРСОНЫ:
 - Возраст: {info['age_group']}
 - Пол: {info['gender']}
@@ -412,10 +433,10 @@ class RationalAgent(PersonaAgent):
     ) -> str:
         info = self._extract_persona_info(persona_context)
         ocean = self._extract_ocean(persona_context)
-        
+        news_ctx = self._extract_news_context(persona_context)
         return f"""СЦЕНАРИЙ:
 {scenario}
-
+{news_ctx}
 ПРОФИЛЬ ПЕРСОНЫ:
 - Образование: {info['education']}
 - Доход: {info['income_level']}
@@ -451,10 +472,10 @@ class SocialAgent(PersonaAgent):
     ) -> str:
         info = self._extract_persona_info(persona_context)
         ocean = self._extract_ocean(persona_context)
-        
+        news_ctx = self._extract_news_context(persona_context)
         return f"""СЦЕНАРИЙ:
 {scenario}
-
+{news_ctx}
 ПРОФИЛЬ ПЕРСОНЫ:
 - Образование: {info['education']}
 - Пол: {info['gender']}
@@ -491,10 +512,10 @@ class IdeologicalAgent(PersonaAgent):
     ) -> str:
         info = self._extract_persona_info(persona_context)
         ocean = self._extract_ocean(persona_context)
-        
+        news_ctx = self._extract_news_context(persona_context)
         return f"""СЦЕНАРИЙ:
 {scenario}
-
+{news_ctx}
 ПРОФИЛЬ ПЕРСОНЫ:
 - Образование: {info['education']}
 - Пол: {info['gender']}
@@ -541,26 +562,26 @@ class DecisionAgent(PersonaAgent):
                     all_voices.append(f"- {entry.get('reaction', 'N/A')}")
         
         voices_text = "\n".join(all_voices) if all_voices else "No voices yet"
-        
+        news_ctx = self._extract_news_context(persona_context)
         return f"""СЦЕНАРИЙ:
     {scenario}
-    
+    {news_ctx}
     ВСЕ ГОЛОСА СОЗНАНИЯ:
     {voices_text}
-    
+
     ПРОФИЛЬ ПЕРСОНЫ:
     - Образование: {info['education']}
     - Пол: {info['gender']}
     - Возраст: {info['age_group']}
     - Семейное положение: {info['marital_status']}
     - Доход: {info['income_level']}
-    
+
     ТВОЯ ЗАДАЧА:
     1. Синтезируй ЭМОЦИОНАЛЬНЫЙ, РАЦИОНАЛЬНЫЙ, СОЦИАЛЬНЫЙ и ИДЕОЛОГИЧЕСКИЙ голоса
     2. Найди КОНСЕНСУС или разреши КОНФЛИКТ
     3. Прими ФИНАЛЬНОЕ РЕШЕНИЕ: True (ДА) или False (НЕТ)
     4. Оцени УВЕРЕННОСТЬ (0.0-1.0)
-    
+
     РЕШИ СЕЙЧАС."""
     
     async def run(
@@ -643,13 +664,16 @@ class MultiAgentReasoner:
     def __init__(
         self,
         persona_context: Dict,
+        world_context: Dict = None,
         max_generations: int = 5,
-        model: str = LLM_MODEL, 
+        model: str = LLM_MODEL,
         temperature: float = LLM_TEMPERATURE
     ):
         self.max_generations = max_generations
         self.model = model
-        self.persona_context = persona_context
+        self.world_context = world_context or {}
+        # world_context передаётся агентам через persona_context["news_context"]
+        self.persona_context = {**persona_context, "news_context": self.world_context}
         
         self.agents: Dict[str, PersonaAgent] = {
             "emotional": EmotionalAgent(model=model),
