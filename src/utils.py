@@ -8,14 +8,37 @@ from typing import Dict, List, Optional, Any
 import logging 
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
-from yandex_chain import YandexLLM
+from yandex_chain import YandexLLM, YandexEmbeddings
 from pydantic import BaseModel
 import re
-
-import pandas as pd
-import numpy as np
+import uuid
+import uuid6
 
 logger = logging.getLogger(__name__)
+
+uuid_namespaces = {
+    "questions": uuid.uuid5(uuid.NAMESPACE_OID, "questions"),
+    "personas": uuid.uuid5(uuid.NAMESPACE_OID, "personas"),
+    "context": uuid.uuid5(uuid.NAMESPACE_OID, "context"),
+    "target_audiences": uuid.uuid5(uuid.NAMESPACE_OID, "target_audiences"),
+}
+
+persona_characteristics = [
+    "region",
+    "age_group",
+    "education",
+    "income_level",
+    "marital_status",
+    "gender",
+    "children_group",
+    "occupation",
+    "openness",
+    "conscientiousness",
+    "extraversion",
+    "agreeableness",
+    "neuroticism",
+    "data_source",
+]
 
 def _get_text_from_response(response) -> str:
     """Универсальная функция для получения текста из ответа LLM"""
@@ -87,7 +110,7 @@ async def robust_llm_call(prompt: str, model = None, temperature: float = 0.5, s
         model = LLM_MODEL
     
     # Настройка Yandex GPT
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("YANDEX_API_KEY")
     folder_id = os.getenv("YANDEX_FOLDER_ID")
     
     # Создаем YandexLLM с folder_id только если он указан
@@ -372,7 +395,6 @@ def translate_ocean_to_readable(df: pd.DataFrame) -> pd.DataFrame:
 
 def get_income_range(income: float, bins, labels) -> str:
     """Преобразует числовой доход в диапазон с меткой."""
-    import numpy as np
     
     for i in range(len(bins) - 1):
         if bins[i] <= income < bins[i + 1]:
@@ -384,3 +406,35 @@ def get_income_range(income: float, bins, labels) -> str:
     label = labels[-1]
     lower = int(bins[-2])
     return f"{label}: {f'{lower:,}'.replace(',', ' ')}+"
+
+def _build_embedding_model() -> YandexEmbeddings:
+    """Создаёт экземпляр YandexEmbeddings из переменных окружения."""
+    params: Dict[str, Any] = {
+        "api_key": os.getenv("YANDEX_API_KEY"),
+        "folder_id": os.getenv("YANDEX_FOLDER_ID"),
+        "model": LLM_MODEL,
+    }
+    return YandexEmbeddings(**params)
+
+embedding_model = None
+def get_embedding(text: str, query: bool = True) -> List[float]:
+    """Возвращает embedding текста (query или document) через YandexEmbeddings."""
+    global embedding_model
+    if embedding_model is None:
+        embedding_model = _build_embedding_model()
+    return embedding_model.embed_query(text) if query else embedding_model.embed_document(text)
+
+def get_uuid(namespace: str, text: str = "") -> str:
+    """
+        Возвращает UUIDv5 для текста или UUIDv7, если текст пустой.
+    """
+    if namespace in uuid_namespaces and text != "":
+        return str(uuid.uuid5(uuid_namespaces[namespace], text))
+    else:
+        return str(uuid6.uuid7())
+
+def get_clear_personas(personas: pd.DataFrame) -> pd.DataFrame:
+    """
+    Возвращает только относящиеся к персонам поля.
+    """
+    return personas[persona_characteristics]

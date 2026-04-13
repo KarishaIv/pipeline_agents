@@ -10,7 +10,7 @@ import logging
 
 from src.data_loading import load_synthetic_data, load_american_data, preprocess_pgm_data, load_survey_data, load_evidence_from_json
 from src.pgm_model import create_pgm_model, train_pgm_model, generate_synthetic_data
-from src.utils import normalize_features, normalize_evidence, filter_real_russian_data, translate_ocean_to_readable, get_income_range
+from src.utils import normalize_features, normalize_evidence, filter_real_russian_data, translate_ocean_to_readable, get_income_range, get_uuid, get_embedding, get_clear_personas
 from src.clustering import replicate_personas_with_gmm
 from src.core.simulation_manager import SimulationManager
 from src.core.storage import StorageManager
@@ -82,18 +82,17 @@ class PipelineRunner:
             'russian_preprocessed': russian_data_preprocessed
         }
         
-        # Загрузка вопросов опроса если нужно
-        if self.config['agent_mode'] == 'survey':
-            if self.config.get('survey_questions'):
-                datasets['survey_questions'] = self.config['survey_questions']
-                logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions (inline)")
-            else:
-                try:
-                    datasets['survey_questions'] = load_survey_data()
-                    logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
-                except Exception as e:
-                    logger.warning(f"Failed to load survey questions: {e}")
-                    datasets['survey_questions'] = []
+        # Загрузка вопросов опроса
+        if self.config.get('survey_questions'):
+            datasets['survey_questions'] = self.config['survey_questions']
+            logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions (inline)")
+        else:
+            try:
+                datasets['survey_questions'] = load_survey_data()
+                logger.info(f"Loaded {len(datasets['survey_questions'])} survey questions")
+            except Exception as e:
+                logger.warning(f"Failed to load survey questions: {e}")
+                datasets['survey_questions'] = []
         
         logger.info(f"  ✓ Evidence: {len(evidence_data)} target audiences")
         logger.info(f"  ✓ Russian data: {len(russian_data)} personas")
@@ -169,6 +168,10 @@ class PipelineRunner:
                 lambda x: f'{int(x)*5}-{int(x)*5+4}' if isinstance(x, (int, float)) else str(x)
             )
 
+        all_personas['UUID'] = all_personas.apply(
+            lambda row: get_uuid("personas", get_clear_personas(row).to_string()), axis=1
+        )
+
         
         logger.info(f"  ✓ Processed {len(all_personas)} personas across {len(datasets['evidence'])} target audiences")
         return all_personas
@@ -183,9 +186,7 @@ class PipelineRunner:
             out_dir=self.output_dir,
             concurrency=self.config['concurrency'],
             timeout=self.config['timeout'],
-            visualize=(self.config['agent_mode'] == 'credit'),
             run_retries=1,
-            agent_mode=self.config['agent_mode'],
             survey_questions=datasets.get('survey_questions', []),
             world_contexts=world_contexts or {},
         )
@@ -197,46 +198,101 @@ class PipelineRunner:
             out_subdir=f"sim_{timestamp}"
         )
         
-        logger.info(f"  ✓ Completed {len(results)} simulations in {self.config['agent_mode']} mode")
+        logger.info(f"  ✓ Completed {len(results)} simulations")
         return results
     
     async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict):
         """Сохранение всех результатов пайплайна"""
         logger.info("💾 Saving pipeline results...")
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        personas_path = self.output_dir / f'all_replicated_personas_{timestamp}.csv'
-        all_personas.to_csv(personas_path, index=False)
-        
-        for i, persona in enumerate([all_personas.iloc[i].to_dict() for i in range(len(all_personas))]):
-            await StorageManager.save_json_async(
-                persona, 
-                self.output_dir / f"profile_{i}_{timestamp}.json"
-            )
-        
-        summary = {
-            'timestamp': timestamp,
-            'total_target_audiences': len(datasets['evidence']),
-            'total_personas_generated': len(all_personas),
-            'total_simulations_completed': len(results),
-            'pipeline_mode': 'pgm' if self.use_pgm else 'real_data',
-            'pipeline_config': self.config,
-            'output_files': {
-                'personas': str(personas_path),
-                'profiles': f"profile_*_{timestamp}.json",
-                'simulations': f"sim_{timestamp}/"
-            }
+
+        questions_path = self.output_dir.parent / "data_4_qdrant/questions.parquet"
+        personas_path = self.output_dir.parent / "data_4_qdrant/personas.parquet"
+        target_audiences_path = self.output_dir.parent / "data_4_qdrant/target_audiences.parquet"
+        simulations_path = self.output_dir.parent / "data_4_qdrant/simulations.parquet"
+
+        # Сохранение вопросов опроса
+        logger.info(f" Сохранение вопросов опроса")
+        questions_uuids = {
+            question : get_uuid("questions", question)
+            for question in datasets['survey_questions']
         }
+        await StorageManager.append_parquet_async(
+            [
+                {
+                    "UUID": questions_uuids[question],
+                    "embedding": get_embedding(question, query=False),
+                    "question": question,
+                }
+                for question in datasets['survey_questions']
+            ], 
+            questions_path,
+        )
         
-        summary_path = self.output_dir / f'pipeline_summary_{timestamp}.json'
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        # Сохранение персон
+        logger.info(f" Сохранение персон")
+        await StorageManager.append_parquet_async(
+            [
+                {
+                    "UUID": persona['UUID'],
+                    "embedding": get_embedding(get_clear_personas(persona).to_string(), query=False),
+                    **persona.to_dict(),
+                }
+                for _, persona in all_personas.iterrows()
+            ], 
+            personas_path,
+        )
+
+        # Сохранение целевых аудиторий
+        logger.info(f" Сохранение целевых аудиторий")
+        await StorageManager.append_parquet_async(
+            [
+                {
+                    "UUID": get_uuid("target_audiences", str(group)),
+                    "embedding": get_embedding(str(group), query=False),
+                    **group,
+                    "personas_uuids": [
+                        persona['UUID']
+                        for _, persona in all_personas[
+                            all_personas['target_audience_name'] == group['target_audience_name']
+                        ].iterrows()
+                    ],
+
+                }
+                for group in datasets['evidence']
+            ], 
+            target_audiences_path,
+            check_columns=False
+        )
+
+        # Сохранение результатов симуляций
+        logger.info(f" Сохранение результатов симуляций")
+        await StorageManager.append_parquet_async(
+            [
+                {
+                    "UUID": get_uuid("simulations"),
+                    **get_sim_embeddings(state),
+                    **get_sim_reasonings(state),
+                    **get_sim_last_reactions(state),
+                    "persona_UUID": result['profile']['UUID'],
+                    "question_UUID": questions_uuids[state['scenario']],
+                    "decision_reasoning": get_decision(state['final_decision'])['reasoning'],
+                    "decision": get_decision(state['final_decision'])['decision'],
+                    "decision_confidence": get_decision(state['final_decision'])['confidence'],
+                    "generation_count": state['generation_count'],
+                    "max_generations": state['max_generations'],
+                    "timestamp": state['timestamp'],
+                    # TODO: добавить контекст агентов
+                } 
+                for result in results if 'survey_responses' in result
+                for response in result['survey_responses']
+                for state in [response['full_state']]   # чтобы не писать на каждой строке ['full_state']
+            ],
+            simulations_path,
+            check_columns=False
+        )
         
-        logger.info(f"  📊 Summary report: {summary_path}")
-        logger.info(f"  👥 Personas data: {personas_path}")
-
-
 async def generate_personas_via_pgm(
     evidence_list: List[Dict],
     model,
@@ -461,3 +517,55 @@ async def _process_target_audiences_parallel(
                    f"({row['unique_clusters']} кластеров) - {row['data_source']}")
     
     return all_personas, ta_summary_stats
+
+def get_sim_reasonings(state: Dict) -> Dict[str, List[str]]:
+    return {
+        "emotional_reasonings": [entry['reasoning'] for entry in state['emotional_history']],
+        "rational_reasonings": [entry['reasoning'] for entry in state['rational_history']],
+        "social_reasonings": [entry['reasoning'] for entry in state['social_history']],
+        "ideological_reasonings": [entry['reasoning'] for entry in state['ideological_history']],
+    }
+
+def get_sim_last_reactions(state: Dict) -> Dict[str, str]:
+    return {
+        "emotional_reaction": state['emotional_history'][-1]['reaction'],
+        "rational_reaction": state['rational_history'][-1]['reaction'],
+        "social_reaction": state['social_history'][-1]['reaction'],
+        "ideological_reaction": state['ideological_history'][-1]['reaction'],
+    }
+
+def get_sim_embeddings(state: Dict) -> Dict[str, List[float]]:
+    reasonings = get_sim_reasonings(state)
+    joined_reasonings = {key: "\n".join(value) for key, value in reasonings.items()}
+    joined_reasonings['decision_reasoning'] = get_decision(state['final_decision'])['reasoning']
+    return {
+        "emotional_vector": get_embedding(joined_reasonings['emotional_reasonings'], query=False),
+        "rational_vector": get_embedding(joined_reasonings['rational_reasonings'], query=False),
+        "social_vector": get_embedding(joined_reasonings['social_reasonings'], query=False),
+        "ideological_vector": get_embedding(joined_reasonings['ideological_reasonings'], query=False),
+        "decision_vector": get_embedding(joined_reasonings['decision_reasoning'], query=False),
+        "general_vector": get_embedding(
+            "\n".join(joined_reasonings.values()),
+            query=False
+        ),
+    }
+
+def get_decision(decision: Dict | str | None) -> Dict:
+    if isinstance(decision, dict):
+        return {
+            "reasoning": decision['reasoning'],
+            "decision": decision['decision'],
+            "confidence": decision['confidence'],
+        }
+    elif isinstance(decision, str):
+        return {
+            "reasoning": decision,
+            "decision": None,
+            "confidence": 0,
+        }
+    else:
+        return {
+            "reasoning": "",
+            "decision": None,
+            "confidence": 0,
+        }
