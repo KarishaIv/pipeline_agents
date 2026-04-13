@@ -1,0 +1,5 @@
+outs:
+- md5: 155939c3322ecf270f81062a4e02c568
+  size: 20615
+  hash: md5
+  path: personas.parquet

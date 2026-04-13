@@ -43,7 +43,7 @@ def _parse_json_from_response(text: str) -> dict:
 
 def calculate_ocean_profiles(neighbor_profiles: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Calculate OCEAN profiles for a set of neighbor profiles."""
-    api_key = os.getenv('OPENAI_API_KEY')
+    api_key = os.getenv('YANDEX_API_KEY')
     folder_id = os.getenv('YANDEX_FOLDER_ID')
     
     llm_params = {
