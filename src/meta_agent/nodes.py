@@ -1,34 +1,62 @@
 """Узлы графа мета-агента: супервайзер, извлечение данных и аналитика."""
 
+import json
 import logging
 import time
 
 from langsmith import traceable
 
 from src.meta_agent.agent_factory import TransientError, run_agent
+from src.meta_agent.config import MAX_SUPERVISOR_ITERATIONS
 from src.meta_agent.prompts import (
     ANALYZER_SYSTEM,
     EXTRACTOR_SYSTEM,
-    MAX_SUPERVISOR_ITERATIONS,
     SUPERVISOR_SYSTEM,
 )
+from src.meta_agent.tools.dto_tools import DTO_STORE_KEY
 from src.meta_agent.tools import (
     AnalysisReportTool,
     ComputeStatsTool,
     CreateChartTool,
     DataExtractionReportTool,
     ExecuteCodeTool,
+    ListDtoNamesTool,
     QdrantCollectionSchema,
     QdrantFilterTool,
     QdrantRetrieveTool,
     QdrantScrollTool,
     QdrantSearchTool,
+    SampleDtoTool,
     SummarizeTextsTool,
     SupervisorDecisionTool,
 )
 from src.meta_agent.utils import truncate_history
 
 logger = logging.getLogger("meta_agent")
+
+
+def _fallback_worker_payload(
+    *,
+    worker: str,
+    raw_output: str,
+    expected_tool: str,
+    parse_error: Exception | None = None,
+) -> str:
+    """Сформировать единообразный fallback-пейлоад для истории графа."""
+    payload = {
+        "status": "failed",
+        "worker": worker,
+        "error_type": "report_parse_error" if parse_error else "unexpected_output",
+        "expected_report_tool": expected_tool,
+        "message": (
+            f"Не удалось распарсить отчёт инструмента {expected_tool}"
+            if parse_error
+            else "Воркер вернул неожиданный формат ответа"
+        ),
+        "details": str(parse_error) if parse_error else "",
+        "raw_output": raw_output,
+    }
+    return json.dumps(payload, ensure_ascii=False)
 
 
 @traceable(name="node.supervisor", run_type="chain")
@@ -49,12 +77,13 @@ async def supervisor_node(state: dict) -> dict:
         task += f"\n\nИстория работы:\n{history_text}"
 
     t0 = time.perf_counter()
-    raw = await run_agent(
+    run_result = await run_agent(
         task=task,
         system_prompt=SUPERVISOR_SYSTEM,
         toolkit=[SupervisorDecisionTool],
         name="supervisor",
     )
+    raw = run_result.raw
     elapsed = time.perf_counter() - t0
     logger.info("Итерация супервайзера %d завершена за %.1fс", iterations + 1, elapsed)
 
@@ -98,7 +127,7 @@ async def data_extractor_node(state: dict) -> dict:
     )
 
     t0 = time.perf_counter()
-    raw = await run_agent(
+    run_result = await run_agent(
         task=task,
         system_prompt=EXTRACTOR_SYSTEM,
         toolkit=[
@@ -107,10 +136,14 @@ async def data_extractor_node(state: dict) -> dict:
             QdrantFilterTool,
             QdrantScrollTool,
             QdrantRetrieveTool,
+            ListDtoNamesTool,
+            SampleDtoTool,
             DataExtractionReportTool,
         ],
         name="data_extractor",
+        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
     )
+    raw = run_result.raw
     logger.info("Извлечение данных завершено за %.1fс", time.perf_counter() - t0)
 
     if isinstance(raw, TransientError):
@@ -120,11 +153,24 @@ async def data_extractor_node(state: dict) -> dict:
         try:
             report = DataExtractionReportTool.model_validate_json(raw)
             content = f"Кратко: {report.summary}\n\nДанные: {report.raw_data}"
-        except Exception:
-            content = raw
+        except Exception as exc:
+            logger.warning("Fallback data_extractor: не удалось распарсить DataExtractionReportTool: %s", exc)
+            content = _fallback_worker_payload(
+                worker="data_extractor",
+                raw_output=raw,
+                expected_tool=DataExtractionReportTool.tool_name,
+                parse_error=exc,
+            )
+
+    dto_store = {}
+    if isinstance(run_result.custom_context, dict):
+        maybe_store = run_result.custom_context.get(DTO_STORE_KEY, {})
+        if isinstance(maybe_store, dict):
+            dto_store = maybe_store
 
     return {
         "history": state.get("history", []) + [{"role": "data_extractor", "content": content}],
+        "dto_store": dto_store,
     }
 
 
@@ -144,10 +190,12 @@ async def analyzer_node(state: dict) -> dict:
     )
 
     t0 = time.perf_counter()
-    raw = await run_agent(
+    run_result = await run_agent(
         task=task,
         system_prompt=ANALYZER_SYSTEM,
         toolkit=[
+            ListDtoNamesTool,
+            SampleDtoTool,
             SummarizeTextsTool,
             ComputeStatsTool,
             ExecuteCodeTool,
@@ -155,7 +203,9 @@ async def analyzer_node(state: dict) -> dict:
             AnalysisReportTool,
         ],
         name="analyzer",
+        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
     )
+    raw = run_result.raw
     logger.info("Аналитика завершена за %.1fс", time.perf_counter() - t0)
 
     if isinstance(raw, TransientError):
@@ -166,9 +216,22 @@ async def analyzer_node(state: dict) -> dict:
             report = AnalysisReportTool.model_validate_json(raw)
             findings_text = "\n".join(f"- {item}" for item in report.key_findings)
             content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {report.conclusions}"
-        except Exception:
-            content = raw
+        except Exception as exc:
+            logger.warning("Fallback analyzer: не удалось распарсить AnalysisReportTool: %s", exc)
+            content = _fallback_worker_payload(
+                worker="analyzer",
+                raw_output=raw,
+                expected_tool=AnalysisReportTool.tool_name,
+                parse_error=exc,
+            )
+
+    dto_store = {}
+    if isinstance(run_result.custom_context, dict):
+        maybe_store = run_result.custom_context.get(DTO_STORE_KEY, {})
+        if isinstance(maybe_store, dict):
+            dto_store = maybe_store
 
     return {
         "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+        "dto_store": dto_store,
     }

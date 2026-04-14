@@ -22,6 +22,7 @@ class MetaAgentResult(NamedTuple):
 class MetaAgentState(TypedDict):
     question: str
     history: list          # [{"role": str, "content": str}]
+    dto_store: dict        # {dto_name: dto_payload}
     next_worker: str       # решение маршрутизации
     current_task: str      # задача верхнего уровня для следующего воркера
     answer: str            # заполняется при next_worker == "end"

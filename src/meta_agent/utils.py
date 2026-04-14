@@ -2,11 +2,32 @@
 
 from __future__ import annotations
 
+import json
 import uuid
+from typing import Any
 
-from src.meta_agent.prompts import MAX_HISTORY_CHARS
+from src.meta_agent.config import MAX_HISTORY_CHARS
 
 _TRUNCATION_MARKER = "…(история обрезана)…\n\n"
+
+
+def truncate_output_value(value: Any, max_len: int) -> Any:
+    """Обрезать значение для компактного ответа инструмента.
+
+    - str: обрезается напрямую;
+    - list/dict: сначала сериализуется целиком в JSON-строку, затем обрезается;
+    - остальные типы возвращаются без изменений.
+    """
+    if isinstance(value, str):
+        if len(value) <= max_len:
+            return value
+        return value[:max_len] + "..."
+    if isinstance(value, (list, dict)):
+        rendered = json.dumps(value, ensure_ascii=False, default=str)
+        if len(rendered) <= max_len:
+            return rendered
+        return rendered[:max_len] + "..."
+    return value
 
 
 def _history_as_text(history: list) -> str:
@@ -85,6 +106,7 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
         state_update = {
             "question": question,
             "history": [],
+            "dto_store": {},
             "next_worker": "",
             "current_task": "",
             "answer": "",

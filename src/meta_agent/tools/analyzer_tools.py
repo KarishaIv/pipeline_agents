@@ -1,9 +1,9 @@
 """
 Инструменты агента-аналитика:
-  - ComputeStatsTool   — описательная статистика по JSON
-  - ExecuteCodeTool    — безопасное выполнение Python в песочнице
-  - CreateChartTool    — построение графиков matplotlib
-  - SummarizeTextsTool — резюме и инсайты через языковую модель
+  - ComputeStatsTool   — описательная статистика по DTO
+  - ExecuteCodeTool    — безопасное выполнение Python в песочнице по DTO
+  - CreateChartTool    — построение графиков matplotlib по DTO
+  - SummarizeTextsTool — резюме и инсайты по DTO через языковую модель
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import statistics as _stats
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import List, Literal, TYPE_CHECKING
+from typing import Any, List, Literal, TYPE_CHECKING
 
 import matplotlib
 matplotlib.use("Agg")
@@ -30,6 +30,8 @@ from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
 from config import PROJECT_ROOT, YANDEX_BASE_URL, get_model_uri
+from src.meta_agent.tools.dto_tools import dto_summary_view, get_dto
+from src.meta_agent.utils import truncate_output_value
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
@@ -39,6 +41,7 @@ logger = logging.getLogger("meta_agent.analyzer")
 
 CHARTS_DIR = PROJECT_ROOT / "charts"
 CODE_TIMEOUT = 30
+DTO_ENV_VAR = "DTO_DATA_JSON"
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +89,30 @@ _SAFE_BUILTINS: dict = {
 }
 
 
-def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list) -> dict:
+def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
+    rows = dto_payload.get("rows", [])
+    columns = dto_payload.get("columns", [])
+    if isinstance(rows, list) and rows:
+        return pd.DataFrame(rows)
+    if isinstance(columns, list):
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame()
+
+
+def _resolve_dto_for_tool(context: "AgentContext", dto_name: str) -> tuple[pd.DataFrame | None, dict[str, Any] | None, str | None]:
+    try:
+        dto_payload = get_dto(context, dto_name)
+    except KeyError:
+        return None, None, json.dumps(
+            {"error": f"DTO '{dto_name}' не найден. Сначала вызови list_dtos."},
+            ensure_ascii=False,
+        )
+
+    df = _dto_to_dataframe(dto_payload)
+    return df, dto_payload, None
+
+
+def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list, dto_payload: dict[str, Any] | None = None) -> dict:
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
     def _save_chart(filename: str | None = None) -> str:
@@ -102,7 +128,7 @@ def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list) -> dict:
         "print": lambda *a, **kw: print(*a, **kw, file=stdout_buf),
     }
 
-    return {
+    namespace = {
         "__builtins__": builtins_patched,
         "np": np,
         "pd": pd,
@@ -113,11 +139,17 @@ def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list) -> dict:
         "save_chart": _save_chart,
     }
 
+    if dto_payload is not None:
+        namespace["dto"] = dto_payload
+        namespace["df"] = _dto_to_dataframe(dto_payload)
 
-def _run_code(code: str) -> tuple[str, str]:
+    return namespace
+
+
+def _run_code(code: str, dto_payload: dict[str, Any] | None = None) -> tuple[str, str]:
     stdout_buf = io.StringIO()
     saved_charts: list = []
-    namespace = _make_sandbox(stdout_buf, saved_charts)
+    namespace = _make_sandbox(stdout_buf, saved_charts, dto_payload=dto_payload)
     try:
         exec(compile(code, "<analyzer>", "exec"), namespace)  # noqa: S102
         output = stdout_buf.getvalue()
@@ -128,12 +160,12 @@ def _run_code(code: str) -> tuple[str, str]:
         return stdout_buf.getvalue().strip(), traceback.format_exc()
 
 
-async def _execute_safely(code: str) -> tuple[str, str]:
+async def _execute_safely(code: str, dto_payload: dict[str, Any] | None = None) -> tuple[str, str]:
     loop = asyncio.get_event_loop()
     executor = ThreadPoolExecutor(max_workers=1)
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(executor, _run_code, code),
+            loop.run_in_executor(executor, _run_code, code, dto_payload),
             timeout=CODE_TIMEOUT,
         )
     except asyncio.TimeoutError:
@@ -147,38 +179,31 @@ async def _execute_safely(code: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 class ComputeStatsTool(BaseTool):
-    """Описательная статистика по JSON: среднее, медиана, разброс, квартили, асимметрия, эксцесс, пропуски, корреляции."""
+    """Описательная статистика по DTO: среднее, медиана, разброс, квартили, асимметрия, эксцесс, пропуски, корреляции."""
 
     tool_name = "compute_stats"
     description = (
-        "Посчитать описательную статистику по JSON-данным: среднее, медиана, стандартное отклонение, "
+        "Посчитать описательную статистику по данным DTO: среднее, медиана, стандартное отклонение, "
         "квартили, асимметрия, эксцесс, число пропусков и попарные корреляции числовых столбцов."
     )
 
     reasoning: str = Field(description="Зачем нужны эти показатели")
-    data_json: str = Field(
-        description="JSON-массив чисел или массив объектов (записей)"
-    )
+    dto_name: str = Field(description="Имя DTO для анализа")
     columns: List[str] = Field(
         default=[],
         description=(
-            "Какие числовые столбцы анализировать, если данные — массив объектов. "
+            "Какие числовые столбцы анализировать. "
             "Пустой список — все числовые столбцы."
         ),
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        try:
-            raw = json.loads(self.data_json)
-        except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Некорректный JSON: {exc}"}, ensure_ascii=False)
+        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        if error:
+            return error
+        assert df is not None and dto_payload is not None
 
         try:
-            if raw and isinstance(raw[0], dict):
-                df = pd.DataFrame(raw)
-            else:
-                df = pd.DataFrame({"value": raw})
-
             if self.columns:
                 df = df[[c for c in self.columns if c in df.columns]]
 
@@ -187,6 +212,7 @@ class ComputeStatsTool(BaseTool):
                 return json.dumps({"error": "Числовые столбцы не найдены"}, ensure_ascii=False)
 
             result = {
+                "dto": dto_summary_view(self.dto_name, dto_payload),
                 "describe": numeric.describe().round(4).to_dict(),
                 "skewness": numeric.skew().round(4).to_dict(),
                 "kurtosis": numeric.kurtosis().round(4).to_dict(),
@@ -215,46 +241,62 @@ class ExecuteCodeTool(BaseTool):
     description = (
         "Написать и безопасно выполнить код на Python для анализа. "
         "В песочнице доступны: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart(). "
-        "Нельзя читать/писать файлы и подключать внешние модули."
+        "Нельзя читать/писать файлы и подключать внешние модули. "
+        f"Данные выбранного DTO также доступны через переменную окружения {DTO_ENV_VAR}."
     )
 
     reasoning: str = Field(description="Что вычисляет код и зачем")
+    dto_name: str = Field(description="Имя DTO, с которым нужно работать в коде")
     code: str = Field(
         description=(
             "Корректный код на Python. "
             "Уже импортированы: np (numpy), pd (pandas), plt (matplotlib), math, json, stats. "
+            "Также доступны переменные dto (dict DTO) и df (DataFrame из DTO rows). "
             "Для сохранения графика вызови save_chart('файл.png'). "
             "Вывод — через print(); stdout возвращается в ответе инструмента."
         )
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        stdout, error = await _execute_safely(self.code)
+        _, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        if error:
+            return error
+        assert dto_payload is not None
+
+        previous_env = os.environ.get(DTO_ENV_VAR)
+        os.environ[DTO_ENV_VAR] = json.dumps(dto_payload, ensure_ascii=False, default=str)
+        try:
+            stdout, error = await _execute_safely(self.code, dto_payload=dto_payload)
+        finally:
+            if previous_env is None:
+                os.environ.pop(DTO_ENV_VAR, None)
+            else:
+                os.environ[DTO_ENV_VAR] = previous_env
+
         result: dict = {}
         if stdout:
             result["output"] = stdout
         if error:
             result["error"] = error
+        result["dto_name"] = self.dto_name
         if not result:
             result["output"] = "(нет вывода)"
         return json.dumps(result, ensure_ascii=False)
 
 
 class CreateChartTool(BaseTool):
-    """Построить и сохранить график matplotlib по JSON-данным; вернуть путь к PNG."""
+    """Построить и сохранить график matplotlib по данным DTO; вернуть путь к PNG."""
 
     tool_name = "create_chart"
     description = (
-        "Построить и сохранить график matplotlib (bar, line, scatter, histogram, pie, box, heatmap) по JSON-данным."
+        "Построить и сохранить график matplotlib (bar, line, scatter, histogram, pie, box, heatmap) по данным DTO."
     )
 
     reasoning: str = Field(description="Что показывает график и зачем он нужен")
     chart_type: Literal["bar", "line", "scatter", "histogram", "pie", "box", "heatmap"] = Field(
         description="Тип графика (bar, line, scatter, histogram, pie, box, heatmap)"
     )
-    data_json: str = Field(
-        description="JSON-массив чисел или массив объектов (записей)"
-    )
+    dto_name: str = Field(description="Имя DTO, по которому строится график")
     title: str = Field(description="Заголовок графика")
     x_column: str = Field(default="", description="Столбец для оси X / подписей")
     y_column: str = Field(default="", description="Столбец для оси Y / значений")
@@ -262,16 +304,14 @@ class CreateChartTool(BaseTool):
     y_label: str = Field(default="", description="Подпись оси Y")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        try:
-            raw = json.loads(self.data_json)
-        except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Некорректный JSON: {exc}"}, ensure_ascii=False)
+        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        if error:
+            return error
+        assert df is not None and dto_payload is not None
 
         CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
         try:
-            df = pd.DataFrame(raw) if raw and isinstance(raw[0], dict) else pd.DataFrame({"value": raw})
-
             fig, ax = plt.subplots(figsize=(10, 6))
 
             match self.chart_type:
@@ -288,12 +328,18 @@ class CreateChartTool(BaseTool):
                         df.select_dtypes(include="number").plot(kind="line", ax=ax)
 
                 case "scatter":
-                    x_col = self.x_column or df.select_dtypes(include="number").columns[0]
-                    y_col = self.y_column or df.select_dtypes(include="number").columns[1]
+                    numeric_cols = list(df.select_dtypes(include="number").columns)
+                    if len(numeric_cols) < 2 and (not self.x_column or not self.y_column):
+                        return json.dumps({"error": "Для scatter нужны минимум два числовых столбца"}, ensure_ascii=False)
+                    x_col = self.x_column or numeric_cols[0]
+                    y_col = self.y_column or numeric_cols[1]
                     ax.scatter(df[x_col], df[y_col], alpha=0.7)
 
                 case "histogram":
-                    col = self.x_column or df.select_dtypes(include="number").columns[0]
+                    numeric_cols = list(df.select_dtypes(include="number").columns)
+                    if not numeric_cols and not self.x_column:
+                        return json.dumps({"error": "Для histogram нужен числовой столбец"}, ensure_ascii=False)
+                    col = self.x_column or numeric_cols[0]
                     ax.hist(df[col].dropna(), bins=20, edgecolor="white")
 
                 case "pie":
@@ -328,7 +374,12 @@ class CreateChartTool(BaseTool):
             plt.close(fig)
 
             return json.dumps(
-                {"chart_saved": path, "title": self.title, "type": self.chart_type},
+                {
+                    "chart_saved": path,
+                    "title": self.title,
+                    "type": self.chart_type,
+                    "dto": dto_summary_view(self.dto_name, dto_payload),
+                },
                 ensure_ascii=False,
             )
 
@@ -348,15 +399,28 @@ class SummarizeTextsTool(BaseTool):
 
     tool_name = "summarize_texts"
     description = (
-        "Отправить список текстов в языковую модель с инструкцией и получить "
+        "Извлечь тексты из DTO, отправить их в языковую модель с инструкцией и получить "
         "краткое резюме или список инсайтов."
-        "Применяй для рассуждений агентов, ответов респондентов и любых текстовых корпусов."
+        "Применяй для рассуждений агентов, ответов респондентов и любых текстовых корпусов. "
+        "Вызывай по dto_name, а не передавай полный массив текстов в аргументах."
     )
 
     reasoning: str = Field(description="Зачем нужно резюме и какие инсайты извлечь")
-    texts: List[str] = Field(
-        description="Список текстов целиком для обработки (рассуждения, ответы опроса, записи и т.д.)",
-        min_length=1,
+    dto_name: str = Field(
+        description="Имя DTO, из которого извлекаются тексты",
+    )
+    text_columns: List[str] = Field(
+        default=[],
+        description=(
+            "Список колонок DTO, содержащих текст. "
+            "Если пусто, берутся все строковые колонки."
+        ),
+    )
+    max_items: int = Field(
+        default=200,
+        ge=1,
+        le=2000,
+        description="Ограничение на количество строк DTO для отправки в LLM.",
     )
     instruction: str = Field(
         default=(
@@ -376,15 +440,41 @@ class SummarizeTextsTool(BaseTool):
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        if not self.texts:
-            return json.dumps({"error": "Список текстов пуст"}, ensure_ascii=False)
+        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        if error:
+            return error
+        assert df is not None and dto_payload is not None
+
+        columns = [col for col in self.text_columns if col in df.columns]
+        if not columns:
+            columns = [col for col in df.columns if df[col].dtype == "object"]
+
+        texts: list[str] = []
+        limited_df = df.head(self.max_items)
+        if columns:
+            for _, row in limited_df.iterrows():
+                values = [
+                    str(row.get(col, "")).strip()
+                    for col in columns
+                    if str(row.get(col, "")).strip() not in ("", "nan", "None")
+                ]
+                if values:
+                    texts.append("\n".join(values))
+        else:
+            for _, row in limited_df.iterrows():
+                row_json = json.dumps(row.to_dict(), ensure_ascii=False, default=str)
+                if row_json.strip():
+                    texts.append(row_json)
+
+        if not texts:
+            return json.dumps({"error": f"В DTO '{self.dto_name}' не найдено текстов для резюме"}, ensure_ascii=False)
 
         numbered = "\n\n".join(
-            f"[{i + 1}] {t.strip()}" for i, t in enumerate(self.texts) if t.strip()
+            f"[{i + 1}] {t.strip()}" for i, t in enumerate(texts) if t.strip()
         )
         user_message = (
             f"{self.instruction}\n\n"
-            f"Тексты (всего {len(self.texts)}):\n\n{numbered}"
+            f"Тексты (всего {len(texts)}):\n\n{numbered}"
         )
 
         try:
@@ -402,7 +492,9 @@ class SummarizeTextsTool(BaseTool):
             return json.dumps(
                 {
                     "summary": summary,
-                    "texts_count": len(self.texts),
+                    "texts_count": len(texts),
+                    "dto": dto_summary_view(self.dto_name, dto_payload, 50),
+                    "text_columns": columns,
                     "instruction": self.instruction,
                 },
                 ensure_ascii=False,

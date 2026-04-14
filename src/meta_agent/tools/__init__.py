@@ -1,6 +1,7 @@
 """Классы инструментов, используемые воркерами мета-агента."""
 
 from src.meta_agent.tools.analyzer_tools import ComputeStatsTool, CreateChartTool, ExecuteCodeTool, SummarizeTextsTool
+from src.meta_agent.tools.dto_tools import ListDtoNamesTool, SampleDtoTool
 from src.meta_agent.tools.output_tools import (
     AnalysisReportTool,
     DataExtractionReportTool,
@@ -25,6 +26,8 @@ __all__ = [
     "QdrantFilterTool",
     "QdrantScrollTool",
     "QdrantRetrieveTool",
+    "ListDtoNamesTool",
+    "SampleDtoTool",
     # Структурированный вывод
     "SupervisorDecisionTool",
     "DataExtractionReportTool",

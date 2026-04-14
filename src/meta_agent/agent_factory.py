@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from typing import Any, NamedTuple
 
 from langsmith.wrappers import wrap_openai
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
@@ -20,8 +21,13 @@ MAX_RETRIES = 3
 RETRY_BACKOFF = (5, 10, 30)
 
 
+class AgentRunResult(NamedTuple):
+    raw: str | "TransientError"
+    custom_context: dict[str, Any] | None
+
+
 class TransientError:
-    """Сигнал, который возвращает run_agent(), когда исчерпаны все ретраи
+    """Сигнал, который попадает в AgentRunResult.raw, когда исчерпаны все ретраи
     при временной сетевой/API-ошибке. Узлы графа могут проверить его и
     переиспользовать в логике обработки вместо обычного результата."""
 
@@ -42,7 +48,14 @@ def _make_openai_client() -> AsyncOpenAI:
     return client
 
 
-def make_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "agent") -> ToolCallingAgent:
+def make_agent(
+    task: str,
+    system_prompt: str,
+    toolkit: list,
+    *,
+    name: str = "agent",
+    initial_custom_context: dict[str, Any] | None = None,
+) -> ToolCallingAgent:
     """Создать экземпляр ToolCallingAgent на базе Yandex LLM."""
     api_key = os.getenv("YANDEX_API_KEY", "")
 
@@ -52,13 +65,16 @@ def make_agent(task: str, system_prompt: str, toolkit: list, *, name: str = "age
     cfg.llm.model = get_model_uri()
     cfg.prompts.system_prompt_str = system_prompt
 
-    return ToolCallingAgent(
+    agent = ToolCallingAgent(
         task_messages=[{"role": "user", "content": task}],
         openai_client=_make_openai_client(),
         agent_config=cfg,
         toolkit=toolkit,
         def_name=name,
     )
+    if initial_custom_context is not None:
+        agent._context.custom_context = initial_custom_context
+    return agent
 
 
 def unwrap(result) -> str | None:
@@ -72,22 +88,38 @@ def unwrap(result) -> str | None:
     return str(result)
 
 
-async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) -> str | TransientError:
+async def run_agent(
+    task: str,
+    system_prompt: str,
+    toolkit: list,
+    *,
+    name: str,
+    initial_custom_context: dict[str, Any] | None = None,
+) -> AgentRunResult:
     """Запустить ToolCallingAgent с ретраями при временных ошибках.
 
-    Возвращает строку ответа агента при успехе или объект TransientError,
-    если попытки исчерпаны из-за временной API-ошибки.
-    Невременные исключения по-прежнему возвращаются как JSON-строка ошибки.
+    Возвращает AgentRunResult:
+    - raw: строка ответа, JSON-ошибка или TransientError;
+    - custom_context: финальный custom_context после выполнения агента.
     """
     last_exc: Exception | None = None
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            agent = make_agent(task, system_prompt, toolkit, name=name)
+            agent = make_agent(
+                task,
+                system_prompt,
+                toolkit,
+                name=name,
+                initial_custom_context=initial_custom_context,
+            )
             raw = unwrap(await agent.execute())
             if raw is None:
-                return json.dumps({"error": "Агент не вернул результат"}, ensure_ascii=False)
-            return raw
+                return AgentRunResult(
+                    raw=json.dumps({"error": "Агент не вернул результат"}, ensure_ascii=False),
+                    custom_context=agent._context.custom_context,
+                )
+            return AgentRunResult(raw=raw, custom_context=agent._context.custom_context)
 
         except TRANSIENT_EXCEPTIONS as exc:
             last_exc = exc
@@ -106,8 +138,14 @@ async def run_agent(task: str, system_prompt: str, toolkit: list, *, name: str) 
 
         except Exception as exc:
             logger.exception("Агент '%s' завершился невременной ошибкой", name)
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+            return AgentRunResult(
+                raw=json.dumps({"error": str(exc)}, ensure_ascii=False),
+                custom_context=initial_custom_context,
+            )
 
-    return TransientError(message=str(last_exc), attempts=MAX_RETRIES)
+    return AgentRunResult(
+        raw=TransientError(message=str(last_exc), attempts=MAX_RETRIES),
+        custom_context=initial_custom_context,
+    )
 
 

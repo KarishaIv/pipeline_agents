@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field
@@ -10,6 +9,7 @@ from qdrant_client import QdrantClient, models
 
 from sgr_agent_core.base_tool import BaseTool
 
+from src.meta_agent.tools.dto_tools import dto_summary_view, register_dto
 from src.utils import get_embedding
 
 logger = logging.getLogger("meta_agent.qdrant")
@@ -201,7 +201,14 @@ class QdrantSearchTool(BaseTool):
                 vector_name=self.vector_name,
                 limit=self.limit,
             )
-            return json.dumps(result, ensure_ascii=False, default=str)
+            dto_name, dto_payload = register_dto(
+                context,
+                source=f"search_{self.collection}",
+                data=result,
+                summary_text=f"Поиск по {self.collection}: '{self.query[:60]}'",
+                meta={"vector_name": self.vector_name, "limit": self.limit},
+            )
+            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant search завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("search", exc)
@@ -227,7 +234,14 @@ class QdrantFilterTool(BaseTool):
                 value=self.value,
                 limit=self.limit,
             )
-            return json.dumps(result, ensure_ascii=False, default=str)
+            dto_name, dto_payload = register_dto(
+                context,
+                source=f"filter_{self.collection}",
+                data=result,
+                summary_text=f"Фильтр {self.collection}: {self.field} == {self.value}",
+                meta={"field": self.field, "value": self.value, "limit": self.limit},
+            )
+            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant filter_points завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("filter_points", exc)
@@ -277,7 +291,21 @@ class QdrantScrollTool(BaseTool):
                 filter_field=self.filter_field,
                 filter_value=self.filter_value,
             )
-            return json.dumps(result, ensure_ascii=False, default=str)
+            dto_name, dto_payload = register_dto(
+                context,
+                source=f"scroll_{self.collection}",
+                data=result.get("points", []),
+                summary_text=f"Scroll {self.collection} (limit={self.limit})",
+                meta={
+                    "next_offset": result.get("next_offset"),
+                    "filter_field": self.filter_field,
+                    "filter_value": self.filter_value,
+                    "payload_fields": self.payload_fields,
+                },
+            )
+            response = dto_summary_view(dto_name, dto_payload)
+            response["next_offset"] = result.get("next_offset")
+            return json.dumps(response, ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant scroll_points завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("scroll_points", exc)
@@ -296,7 +324,14 @@ class QdrantRetrieveTool(BaseTool):
     async def __call__(self, context, config, **_) -> str:
         try:
             result = retrieve_by_id(collection=self.collection, ids=self.ids)
-            return json.dumps(result, ensure_ascii=False, default=str)
+            dto_name, dto_payload = register_dto(
+                context,
+                source=f"retrieve_{self.collection}",
+                data=result,
+                summary_text=f"retrieve_by_id {self.collection}: {len(self.ids)} id(s)",
+                meta={"ids_count": len(self.ids)},
+            )
+            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant retrieve_by_id завершился ошибкой: %s", exc)
             return _qdrant_failure_payload("retrieve_by_id", exc)

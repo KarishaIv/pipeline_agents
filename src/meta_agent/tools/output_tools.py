@@ -71,10 +71,10 @@ class DataExtractionReportTool(SystemBaseTool):
         max_length=10,
     )
     summary: str = Field(
-        description="Все, полученное в результате извлечения данных, в виде JSON-строки"
+        description="Краткий итог извлечения (DTO-имена, назначение, важные поля и объёмы) в виде JSON-строки"
     )
     raw_data: str = Field(
-        description="Сырые данные, извлечённые из Qdrant, в виде JSON-строки"
+        description="Ссылки на DTO и служебные метаданные (без полного дампа rows) в виде JSON-строки"
     )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
         description="Статус извлечения: успех или сбой"
