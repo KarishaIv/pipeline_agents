@@ -171,4 +171,69 @@ python main.py \
 
 ## Что не входит в основной merge
 
-Внешний генератор `news context (новостного контекста)` из папки `multi_agent_rag/` не является частью основного пайплайна этого репозитория. В основной код здесь перенесена только совместимость с его `JSON outputs (JSON-выходами)` и примеры готовых `news snapshots (снимков новостного контекста)` для текущих аудиторий.
+## 📚 Ключевые компоненты
+
+### Agents
+
+| Agent | Роль | Технологии |
+|-------|------|-----------|
+| **PersonaAgent** | Моделирование клиента | LLM (GPT), structured outputs |
+| **EmotionAgent** | Отслеживание эмоций | LLM psychological prompts |
+| **ToolAgent** | Симуляция приложения | Rule-based + LLM |
+| **FinancialAgent** | Генерация push | LLM personalization |
+| **DecisionAgent** | Принятие решения | LLM reasoning |
+
+### Schemas (Pydantic)
+
+Все данные валидируются через Pydantic:
+- `PersonaGoal`, `PersonaAction`, `PersonaReaction`, `PersonaSessionRecord`
+- `EmotionalStateSchema` (mood, stress, confidence, bank_trust, urgency)
+- `ToolResponseSchema` (status, message, data)
+- `FinancialPush`, `FinancialPrediction`
+- `DecisionOutcome` (will_take_credit, reasoning, emotional_factors)
+
+### Core Utilities
+
+- **llm_utils.py**: `robust_llm_call()` с retry logic и structured outputs
+- **storage.py**: Асинхронное сохранение JSON
+- **visualization.py**: Графики динамики эмоций (matplotlib)
+
+---
+
+## 🔬 Технические детали
+
+### PGM (Probabilistic Graphical Model)
+
+**Библиотека**: pgmpy  
+**Тип модели**: Discrete Bayesian Network  
+**Обучение**: Maximum Likelihood Estimation  
+**Inference**: Likelihood-weighted sampling
+
+**Граф зависимостей**:
+```
+age_group → marital_status, children_group, education, income_level
+education → occupation, income_level
+marital_status → children_group
+region_type → income_level
+occupation → income_level
+gender → marital_status, income_level
+```
+
+### k-NN Matching
+
+**Библиотека**: scipy.spatial.distance  
+**Метрика**: Euclidean distance (после нормализации)  
+**Процесс**:
+1. Category filtering (categorical exact match)
+2. Distance computation (continuous features)
+3. Top-k selection
+4. OCEAN aggregation (mean + std)
+
+### LLM Integration
+
+**Модель**: Yandex GPT   
+**Режим**: Structured outputs (JSON mode)  
+**Retry**: До 3 попыток при ошибках API  
+**Timeout**: Конфигурируемый per-call
+
+---
