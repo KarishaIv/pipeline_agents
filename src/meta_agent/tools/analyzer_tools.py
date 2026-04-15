@@ -1,22 +1,16 @@
 """
 Инструменты агента-аналитика:
   - ComputeStatsTool   — описательная статистика по DTO
-  - ExecuteCodeTool    — безопасное выполнение Python в песочнице по DTO
   - CreateChartTool    — построение графиков matplotlib по DTO
   - SummarizeTextsTool — резюме и инсайты по DTO через языковую модель
 """
 
 from __future__ import annotations
 
-import asyncio
-import io
 import json
 import logging
-import math
 import os
-import statistics as _stats
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, List, Literal, TYPE_CHECKING
 
@@ -40,53 +34,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("meta_agent.analyzer")
 
 CHARTS_DIR = PROJECT_ROOT / "charts"
-CODE_TIMEOUT = 30
-DTO_ENV_VAR = "DTO_DATA_JSON"
-
-
-# ---------------------------------------------------------------------------
-# Песочница для ExecuteCodeTool
-# ---------------------------------------------------------------------------
-
-_SAFE_BUILTINS: dict = {
-    "print": print,
-    "range": range,
-    "len": len,
-    "sum": sum,
-    "min": min,
-    "max": max,
-    "abs": abs,
-    "round": round,
-    "sorted": sorted,
-    "enumerate": enumerate,
-    "zip": zip,
-    "list": list,
-    "dict": dict,
-    "set": set,
-    "tuple": tuple,
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "type": type,
-    "isinstance": isinstance,
-    "hasattr": hasattr,
-    "getattr": getattr,
-    "repr": repr,
-    "format": format,
-    "map": map,
-    "filter": filter,
-    "any": any,
-    "all": all,
-    "iter": iter,
-    "next": next,
-    "reversed": reversed,
-    "vars": vars,
-    "Exception": Exception,
-    "ValueError": ValueError,
-    "KeyError": KeyError,
-    "TypeError": TypeError,
-}
 
 
 def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
@@ -110,68 +57,6 @@ def _resolve_dto_for_tool(context: "AgentContext", dto_name: str) -> tuple[pd.Da
 
     df = _dto_to_dataframe(dto_payload)
     return df, dto_payload, None
-
-
-def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list, dto_payload: dict[str, Any] | None = None) -> dict:
-    CHARTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    def _save_chart(filename: str | None = None) -> str:
-        name = filename or f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
-        path = str(CHARTS_DIR / name)
-        plt.savefig(path, bbox_inches="tight", dpi=150)
-        plt.close()
-        saved_charts.append(path)
-        return path
-
-    builtins_patched = {
-        **_SAFE_BUILTINS,
-        "print": lambda *a, **kw: print(*a, **kw, file=stdout_buf),
-    }
-
-    namespace = {
-        "__builtins__": builtins_patched,
-        "np": np,
-        "pd": pd,
-        "plt": plt,
-        "math": math,
-        "json": json,
-        "stats": _stats,
-        "save_chart": _save_chart,
-    }
-
-    if dto_payload is not None:
-        namespace["dto"] = dto_payload
-        namespace["df"] = _dto_to_dataframe(dto_payload)
-
-    return namespace
-
-
-def _run_code(code: str, dto_payload: dict[str, Any] | None = None) -> tuple[str, str]:
-    stdout_buf = io.StringIO()
-    saved_charts: list = []
-    namespace = _make_sandbox(stdout_buf, saved_charts, dto_payload=dto_payload)
-    try:
-        exec(compile(code, "<analyzer>", "exec"), namespace)  # noqa: S102
-        output = stdout_buf.getvalue()
-        if saved_charts:
-            output += f"\nСохранённые графики: {', '.join(saved_charts)}"
-        return output.strip(), ""
-    except Exception:
-        return stdout_buf.getvalue().strip(), traceback.format_exc()
-
-
-async def _execute_safely(code: str, dto_payload: dict[str, Any] | None = None) -> tuple[str, str]:
-    loop = asyncio.get_event_loop()
-    executor = ThreadPoolExecutor(max_workers=1)
-    try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(executor, _run_code, code, dto_payload),
-            timeout=CODE_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        return "", f"Превышено время выполнения ({CODE_TIMEOUT} с)"
-    finally:
-        executor.shutdown(wait=False)
 
 
 # ---------------------------------------------------------------------------
@@ -227,61 +112,6 @@ class ComputeStatsTool(BaseTool):
 
         except Exception as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
-
-
-class ExecuteCodeTool(BaseTool):
-    """Безопасное выполнение Python-кода для произвольного анализа.
-
-    В песочнице: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart().
-    Вызов save_chart('имя.png') сохраняет текущий график matplotlib.
-    Запрещены произвольный доступ к файлам и внешние import.
-    """
-
-    tool_name = "execute_code"
-    description = (
-        "Написать и безопасно выполнить код на Python для анализа. "
-        "В песочнице доступны: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart(). "
-        "Нельзя читать/писать файлы и подключать внешние модули. "
-        f"Данные выбранного DTO также доступны через переменную окружения {DTO_ENV_VAR}."
-    )
-
-    reasoning: str = Field(description="Что вычисляет код и зачем")
-    dto_name: str = Field(description="Имя DTO, с которым нужно работать в коде")
-    code: str = Field(
-        description=(
-            "Корректный код на Python. "
-            "Уже импортированы: np (numpy), pd (pandas), plt (matplotlib), math, json, stats. "
-            "Также доступны переменные dto (dict DTO) и df (DataFrame из DTO rows). "
-            "Для сохранения графика вызови save_chart('файл.png'). "
-            "Вывод — через print(); stdout возвращается в ответе инструмента."
-        )
-    )
-
-    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        _, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
-        if error:
-            return error
-        assert dto_payload is not None
-
-        previous_env = os.environ.get(DTO_ENV_VAR)
-        os.environ[DTO_ENV_VAR] = json.dumps(dto_payload, ensure_ascii=False, default=str)
-        try:
-            stdout, error = await _execute_safely(self.code, dto_payload=dto_payload)
-        finally:
-            if previous_env is None:
-                os.environ.pop(DTO_ENV_VAR, None)
-            else:
-                os.environ[DTO_ENV_VAR] = previous_env
-
-        result: dict = {}
-        if stdout:
-            result["output"] = stdout
-        if error:
-            result["error"] = error
-        result["dto_name"] = self.dto_name
-        if not result:
-            result["output"] = "(нет вывода)"
-        return json.dumps(result, ensure_ascii=False)
 
 
 class CreateChartTool(BaseTool):

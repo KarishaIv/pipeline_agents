@@ -116,3 +116,49 @@ class AnalysisReportTool(SystemBaseTool):
         payload = self.model_dump_json()
         context.execution_result = payload
         return payload
+
+
+class CodeWriterTool(SystemBaseTool):
+    """Задача от аналитика, которую нужно передать агенту code_writer."""
+
+    tool_name = "code_writer"
+    description = (
+        "Передать задачу для code_writer и завершить текущий шаг аналитика."
+    )
+
+    reasoning: str = Field(description="Почему требуется делегировать задачу code_writer")
+    task: str = Field(
+        description="Задача для code_writer (что посчитать/проверить/визуализировать).",
+    )
+
+    async def __call__(self, context: AgentContext, config, **_) -> str:
+        context.state = AgentStatesEnum.COMPLETED
+        payload = self.model_dump_json()
+        context.execution_result = payload
+        return payload
+
+
+class CodeExecutionReportTool(SystemBaseTool):
+    """Структурированный отчёт code_writer после написания и проверки кода."""
+
+    tool_name = "code_execution_report"
+    description = (
+        "Передать результаты code_writer: код, валидацию, выполнение и выводы; "
+        "завершить шаг code_writer."
+    )
+
+    reasoning: str = Field(description="Подход к решению и ключевые решения по коду")
+    task: str = Field(description="Исходная задача для code_writer")
+    code: str = Field(description="Итоговый исполняемый код")
+    validation: str = Field(description="JSON-строка результата validate_code")
+    execution: str = Field(description="JSON-строка результата execute_code")
+    findings: List[str] = Field(description="Ключевые наблюдения из выполнения кода")
+    status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
+        description="Статус выполнения code_writer: успех или сбой"
+    )
+
+    async def __call__(self, context: AgentContext, config, **_) -> str:
+        context.state = self.status
+        payload = self.model_dump_json()
+        context.execution_result = payload
+        return payload

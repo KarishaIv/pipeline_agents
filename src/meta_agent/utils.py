@@ -101,7 +101,7 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
     """Собрать state update для очередного хода с добавлением вопроса в историю."""
     existing_history = list(snapshot_values.get("history", []))
     if snapshot_values:
-        state_update = {"question": question, "iterations": 0}
+        state_update = {"question": question, "iterations": 0, "delegated_attempts": 0}
     else:
         state_update = {
             "question": question,
@@ -109,6 +109,7 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
             "dto_store": {},
             "next_worker": "",
             "current_task": "",
+            "delegated_attempts": 0,
             "answer": "",
             "iterations": 0,
         }
@@ -132,3 +133,11 @@ def build_persisted_history(result: dict, question: str) -> list:
 def route_supervisor(state: dict) -> str:
     """Вернуть имя следующего узла по решению супервайзера."""
     return state.get("next_worker", "end")
+
+
+def route_analyzer(state: dict) -> str:
+    """Вернуть следующий узел после analyzer: code_writer или supervisor."""
+    next_worker = state.get("next_worker", "supervisor")
+    if next_worker == "code_writer":
+        return "code_writer"
+    return "supervisor"

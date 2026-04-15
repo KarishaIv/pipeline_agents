@@ -9,8 +9,14 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
 from typing_extensions import TypedDict
 
-from src.meta_agent.nodes import analyzer_node, data_extractor_node, supervisor_node
-from src.meta_agent.utils import build_persisted_history, build_turn_state_update, resolve_thread_id, route_supervisor
+from src.meta_agent.nodes import analyzer_node, code_writer_node, data_extractor_node, supervisor_node
+from src.meta_agent.utils import (
+    build_persisted_history,
+    build_turn_state_update,
+    resolve_thread_id,
+    route_analyzer,
+    route_supervisor,
+)
 
 logger = logging.getLogger("meta_agent")
 
@@ -25,6 +31,7 @@ class MetaAgentState(TypedDict):
     dto_store: dict        # {dto_name: dto_payload}
     next_worker: str       # решение маршрутизации
     current_task: str      # задача верхнего уровня для следующего воркера
+    delegated_attempts: int  # число делегаций analyzer -> code_writer в текущем прогоне
     answer: str            # заполняется при next_worker == "end"
     iterations: int
 
@@ -44,6 +51,7 @@ class MetaAgentGraphManager:
         graph.add_node("supervisor", supervisor_node)
         graph.add_node("data_extractor", data_extractor_node)
         graph.add_node("analyzer", analyzer_node)
+        graph.add_node("code_writer", code_writer_node)
 
         graph.add_edge(START, "supervisor")
         graph.add_conditional_edges(
@@ -51,8 +59,13 @@ class MetaAgentGraphManager:
             route_supervisor,
             {"data_extractor": "data_extractor", "analyzer": "analyzer", "end": END},
         )
+        graph.add_conditional_edges(
+            "analyzer",
+            route_analyzer,
+            {"code_writer": "code_writer", "supervisor": "supervisor"},
+        )
         graph.add_edge("data_extractor", "supervisor")
-        graph.add_edge("analyzer", "supervisor")
+        graph.add_edge("code_writer", "analyzer")
 
         return graph.compile(checkpointer=self._checkpointer)
 

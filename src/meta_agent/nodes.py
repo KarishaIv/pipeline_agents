@@ -6,16 +6,20 @@ import time
 
 from langsmith import traceable
 
+from config import BIG_MODEL
 from src.meta_agent.agent_factory import TransientError, run_agent
-from src.meta_agent.config import MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.config import MAX_DELEGATED_ATTEMPTS, MAX_SUPERVISOR_ITERATIONS
 from src.meta_agent.prompts import (
     ANALYZER_SYSTEM,
+    CODE_WRITER_SYSTEM,
     EXTRACTOR_SYSTEM,
     SUPERVISOR_SYSTEM,
 )
 from src.meta_agent.tools.dto_tools import DTO_STORE_KEY
 from src.meta_agent.tools import (
     AnalysisReportTool,
+    CodeWriterTool,
+    CodeExecutionReportTool,
     ComputeStatsTool,
     CreateChartTool,
     DataExtractionReportTool,
@@ -26,9 +30,11 @@ from src.meta_agent.tools import (
     QdrantRetrieveTool,
     QdrantScrollTool,
     QdrantSearchTool,
+    RemainingStepsTool,
     SampleDtoTool,
     SummarizeTextsTool,
     SupervisorDecisionTool,
+    ValidateCodeTool,
 )
 from src.meta_agent.utils import truncate_history
 
@@ -59,6 +65,15 @@ def _fallback_worker_payload(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _extract_dto_store(custom_context: dict | None) -> dict:
+    dto_store = {}
+    if isinstance(custom_context, dict):
+        maybe_store = custom_context.get(DTO_STORE_KEY, {})
+        if isinstance(maybe_store, dict):
+            dto_store = maybe_store
+    return dto_store
+
+
 @traceable(name="node.supervisor", run_type="chain")
 async def supervisor_node(state: dict) -> dict:
     """Узел супервайзера: анализирует историю, ставит следующую задачу,
@@ -80,7 +95,7 @@ async def supervisor_node(state: dict) -> dict:
     run_result = await run_agent(
         task=task,
         system_prompt=SUPERVISOR_SYSTEM,
-        toolkit=[SupervisorDecisionTool],
+        toolkit=[RemainingStepsTool, SupervisorDecisionTool],
         name="supervisor",
     )
     raw = run_result.raw
@@ -137,6 +152,7 @@ async def data_extractor_node(state: dict) -> dict:
             QdrantScrollTool,
             QdrantRetrieveTool,
             ListDtoNamesTool,
+            RemainingStepsTool,
             SampleDtoTool,
             DataExtractionReportTool,
         ],
@@ -162,32 +178,27 @@ async def data_extractor_node(state: dict) -> dict:
                 parse_error=exc,
             )
 
-    dto_store = {}
-    if isinstance(run_result.custom_context, dict):
-        maybe_store = run_result.custom_context.get(DTO_STORE_KEY, {})
-        if isinstance(maybe_store, dict):
-            dto_store = maybe_store
-
     return {
         "history": state.get("history", []) + [{"role": "data_extractor", "content": content}],
-        "dto_store": dto_store,
+        "dto_store": _extract_dto_store(run_result.custom_context),
     }
 
 
 @traceable(name="node.analyzer", run_type="chain")
 async def analyzer_node(state: dict) -> dict:
-    """Узел аналитики: считает статистику, пишет код, строит графики
-    и передаёт выводы через AnalysisReportTool."""
+    """Узел аналитики: считает статистику, выбирает следующий шаг и при
+    необходимости маршрутизирует задачу в code_writer."""
     prior_data = "\n\n".join(
         f"[{message['role'].upper()}]: {message['content']}"
         for message in state.get("history", [])
-        if message["role"] in ("data_extractor", "analyzer")
+        if message["role"] in ("data_extractor", "analyzer", "code_writer")
     )
     task = (
         f"Задача от супервайзера: {state['current_task']}\n\n"
         f"Исходный вопрос: {state['question']}\n\n"
         f"Собранные данные:\n{prior_data}"
     )
+    delegated_attempts = int(state.get("delegated_attempts", 0))
 
     t0 = time.perf_counter()
     run_result = await run_agent(
@@ -195,11 +206,12 @@ async def analyzer_node(state: dict) -> dict:
         system_prompt=ANALYZER_SYSTEM,
         toolkit=[
             ListDtoNamesTool,
+            RemainingStepsTool,
             SampleDtoTool,
             SummarizeTextsTool,
             ComputeStatsTool,
-            ExecuteCodeTool,
             CreateChartTool,
+            CodeWriterTool,
             AnalysisReportTool,
         ],
         name="analyzer",
@@ -210,28 +222,150 @@ async def analyzer_node(state: dict) -> dict:
 
     if isinstance(raw, TransientError):
         logger.error("У агента аналитики временная ошибка: %s", raw)
-        content = f"[ВРЕМЕННАЯ ОШИБКА] Анализ не выполнен: {raw.message}"
+        return {
+            "next_worker": "supervisor",
+            "history": state.get("history", []) + [{"role": "analyzer", "content": f"[ВРЕМЕННАЯ ОШИБКА] Анализ не выполнен: {raw.message}"}],
+            "dto_store": state.get("dto_store", {}),
+            "delegated_attempts": delegated_attempts,
+        }
+
+    try:
+        report = AnalysisReportTool.model_validate_json(raw)
+        findings_text = "\n".join(f"- {item}" for item in report.key_findings)
+        content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {report.conclusions}"
+        return {
+            "next_worker": "supervisor",
+            "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+            "dto_store": _extract_dto_store(run_result.custom_context),
+            "delegated_attempts": delegated_attempts,
+        }
+    except Exception:
+        pass
+
+    try:
+        decision = CodeWriterTool.model_validate_json(raw)
+        if delegated_attempts >= MAX_DELEGATED_ATTEMPTS:
+            limit_content = (
+                f"[ЛИМИТ ДЕЛЕГИРОВАНИЯ] Достигнут лимит переходов analyzer -> code_writer: "
+                f"{MAX_DELEGATED_ATTEMPTS}. Продолжаю без новых делегаций."
+            )
+            return {
+                "next_worker": "supervisor",
+                "history": state.get("history", []) + [{"role": "analyzer", "content": limit_content}],
+                "dto_store": _extract_dto_store(run_result.custom_context),
+                "delegated_attempts": delegated_attempts,
+            }
+
+        decision_content = (
+            "Решение аналитика: code_writer.\n"
+            f"Причина: {decision.reasoning}\n"
+            f"Задача: {decision.task}"
+        )
+        return {
+            "next_worker": "code_writer",
+            "current_task": decision.task,
+            "history": state.get("history", []) + [{"role": "analyzer", "content": decision_content}],
+            "dto_store": _extract_dto_store(run_result.custom_context),
+            "delegated_attempts": delegated_attempts + 1,
+        }
+    except Exception as exc:
+        logger.warning("Fallback analyzer: не удалось распарсить ответ ни как AnalysisReportTool, ни как CodeWriterTool: %s", exc)
+        content = _fallback_worker_payload(
+            worker="analyzer",
+            raw_output=raw,
+            expected_tool=f"{AnalysisReportTool.tool_name}/{CodeWriterTool.tool_name}",
+            parse_error=exc,
+        )
+        if delegated_attempts >= MAX_DELEGATED_ATTEMPTS:
+            return {
+                "next_worker": "supervisor",
+                "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+                "dto_store": _extract_dto_store(run_result.custom_context),
+                "delegated_attempts": delegated_attempts,
+            }
+        return {
+            "next_worker": "code_writer",
+            "current_task": (
+                "Сформируй и выполни код для продолжения анализа. "
+                f"Сырые данные ответа analyzer: {raw}"
+            ),
+            "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+            "dto_store": _extract_dto_store(run_result.custom_context),
+            "delegated_attempts": delegated_attempts + 1,
+        }
+
+
+@traceable(name="node.code_writer", run_type="chain")
+async def code_writer_node(state: dict) -> dict:
+    """Узел code_writer: пишет, валидирует и запускает код с BIG_MODEL."""
+    code_task = state.get("current_task", "").strip()
+    if not code_task:
+        content = (
+            "[ОШИБКА ROUTING] analyzer направил в code_writer без задачи. "
+            "Возврат к analyzer."
+        )
+        return {
+            "next_worker": "analyzer",
+            "history": state.get("history", []) + [{"role": "code_writer", "content": content}],
+            "dto_store": state.get("dto_store", {}),
+        }
+
+    prior_data = "\n\n".join(
+        f"[{message['role'].upper()}]: {message['content']}"
+        for message in state.get("history", [])
+        if message["role"] in ("data_extractor", "analyzer", "code_writer")
+    )
+    task = (
+        f"Задача от analyzer: {code_task}\n\n"
+        f"Исходный вопрос: {state['question']}\n\n"
+        f"Контекст предыдущих шагов:\n{prior_data}"
+    )
+
+    t0 = time.perf_counter()
+    run_result = await run_agent(
+        task=task,
+        system_prompt=CODE_WRITER_SYSTEM,
+        toolkit=[
+            ListDtoNamesTool,
+            RemainingStepsTool,
+            SampleDtoTool,
+            ValidateCodeTool,
+            ExecuteCodeTool,
+            CodeExecutionReportTool,
+        ],
+        name="code_writer",
+        model=BIG_MODEL,
+        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
+    )
+    raw = run_result.raw
+    logger.info("Code_writer завершён за %.1fс", time.perf_counter() - t0)
+
+    if isinstance(raw, TransientError):
+        logger.error("У code_writer временная ошибка: %s", raw)
+        content = f"[ВРЕМЕННАЯ ОШИБКА] Кодовый шаг не выполнен: {raw.message}"
     else:
         try:
-            report = AnalysisReportTool.model_validate_json(raw)
-            findings_text = "\n".join(f"- {item}" for item in report.key_findings)
-            content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {report.conclusions}"
+            report = CodeExecutionReportTool.model_validate_json(raw)
+            findings_text = "\n".join(f"- {item}" for item in report.findings)
+            content = (
+                f"Кодовый шаг: {report.task}\n"
+                f"Найдено:\n{findings_text}\n\n"
+                f"Валидация: {report.validation}\n"
+                f"Выполнение: {report.execution}"
+            )
         except Exception as exc:
-            logger.warning("Fallback analyzer: не удалось распарсить AnalysisReportTool: %s", exc)
+            logger.warning("Fallback code_writer: не удалось распарсить CodeExecutionReportTool: %s", exc)
             content = _fallback_worker_payload(
-                worker="analyzer",
+                worker="code_writer",
                 raw_output=raw,
-                expected_tool=AnalysisReportTool.tool_name,
+                expected_tool=CodeExecutionReportTool.tool_name,
                 parse_error=exc,
             )
 
-    dto_store = {}
-    if isinstance(run_result.custom_context, dict):
-        maybe_store = run_result.custom_context.get(DTO_STORE_KEY, {})
-        if isinstance(maybe_store, dict):
-            dto_store = maybe_store
-
     return {
-        "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
-        "dto_store": dto_store,
+        "next_worker": "analyzer",
+        "history": state.get("history", []) + [{"role": "code_writer", "content": content}],
+        "dto_store": _extract_dto_store(run_result.custom_context),
+        "current_task": code_task,
+        "delegated_attempts": int(state.get("delegated_attempts", 0)),
     }

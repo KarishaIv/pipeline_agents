@@ -14,9 +14,16 @@ from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 from sgr_agent_core.base_tool import BaseTool
 
 from config import get_model_uri, YANDEX_BASE_URL
+from src.meta_agent.config import MAX_AGENT_ITERATIONS
 logger = logging.getLogger("meta_agent")
 
-TRANSIENT_EXCEPTIONS = (APITimeoutError, APIConnectionError, RateLimitError, InternalServerError)
+TRANSIENT_EXCEPTIONS = (
+    APITimeoutError,
+    APIConnectionError,
+    RateLimitError,
+    InternalServerError,
+    asyncio.CancelledError,
+)
 MAX_RETRIES = 3
 RETRY_BACKOFF = (5, 10, 30)
 
@@ -54,6 +61,7 @@ def make_agent(
     toolkit: list,
     *,
     name: str = "agent",
+    model: str | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> ToolCallingAgent:
     """Создать экземпляр ToolCallingAgent на базе Yandex LLM."""
@@ -62,8 +70,9 @@ def make_agent(
     cfg = AgentConfig()
     cfg.llm.api_key = api_key
     cfg.llm.base_url = YANDEX_BASE_URL
-    cfg.llm.model = get_model_uri()
+    cfg.llm.model = get_model_uri(model)
     cfg.prompts.system_prompt_str = system_prompt
+    cfg.execution.max_iterations = MAX_AGENT_ITERATIONS
 
     agent = ToolCallingAgent(
         task_messages=[{"role": "user", "content": task}],
@@ -94,6 +103,7 @@ async def run_agent(
     toolkit: list,
     *,
     name: str,
+    model: str | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> AgentRunResult:
     """Запустить ToolCallingAgent с ретраями при временных ошибках.
@@ -111,12 +121,22 @@ async def run_agent(
                 system_prompt,
                 toolkit,
                 name=name,
+                model=model,
                 initial_custom_context=initial_custom_context,
             )
             raw = unwrap(await agent.execute())
             if raw is None:
+                last_exc = RuntimeError("Агент не вернул результат")
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_BACKOFF[attempt - 1]
+                    logger.warning(
+                        "Agent '%s' returned empty response (attempt %d/%d). Retrying in %ds…",
+                        name, attempt, MAX_RETRIES, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 return AgentRunResult(
-                    raw=json.dumps({"error": "Агент не вернул результат"}, ensure_ascii=False),
+                    raw=TransientError(message=str(last_exc), attempts=attempt),
                     custom_context=agent._context.custom_context,
                 )
             return AgentRunResult(raw=raw, custom_context=agent._context.custom_context)
