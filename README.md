@@ -329,7 +329,7 @@ gender → marital_status, income_level
 
 ### LLM Integration
 
-**Модель**: OpenAI GPT (gpt-4)  
+**Модель**: Yandex GPT   
 **Режим**: Structured outputs (JSON mode)  
 **Retry**: До 3 попыток при ошибках API  
 **Timeout**: Конфигурируемый per-call
