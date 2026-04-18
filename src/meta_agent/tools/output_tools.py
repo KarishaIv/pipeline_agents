@@ -73,7 +73,7 @@ class DataExtractionReportTool(SystemBaseTool):
     summary: str = Field(
         description="Краткий итог извлечения (DTO-имена, назначение, важные поля и объёмы) в виде JSON-строки"
     )
-    raw_data: str = Field(
+    dto_references: str = Field(
         description="Ссылки на DTO и служебные метаданные (без полного дампа rows) в виде JSON-строки"
     )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
@@ -155,6 +155,51 @@ class CodeExecutionReportTool(SystemBaseTool):
     findings: List[str] = Field(description="Ключевые наблюдения из выполнения кода")
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
         description="Статус выполнения code_writer: успех или сбой"
+    )
+
+    async def __call__(self, context: AgentContext, config, **_) -> str:
+        context.state = self.status
+        payload = self.model_dump_json()
+        context.execution_result = payload
+        return payload
+
+
+class AnalyzerDecisionTool(SystemBaseTool):
+    """Unified decision tool for analyzer_node.
+    LLM calls this single tool to decide report vs delegate.
+    """
+
+    tool_name = "analyzer_decision"
+    description = (
+        "Завершить шаг аналитика: сформулировать итоговые выводы (decision='report'), "
+        "либо делегировать задачу code_writer (decision='delegate')."
+    )
+
+    reasoning: str = Field(description="Краткий анализ текущей ситуации, данных и выбранного пути")
+    decision: Literal["report", "delegate"] = Field(
+        description="Тип решения: 'report' — завершить анализ с выводами; 'delegate' — передать code_writer"
+    )
+    # Fields for report
+    key_findings: List[str] = Field(
+        default_factory=list,
+        description="Ключевые находки и закономерности (используется при decision='report')"
+    )
+    conclusions: str = Field(
+        default="",
+        description="Развёрнутые выводы на русском (используется при decision='report')"
+    )
+    # Fields for delegate
+    task: str = Field(
+        default="",
+        description="Конкретная задача для code_writer (используется при decision='delegate')"
+    )
+    delegate_reason: str = Field(
+        default="",
+        description="Обоснование почему нужен code_writer (используется при decision='delegate')"
+    )
+    status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
+        default=AgentStatesEnum.COMPLETED,
+        description="Статус шага анализа"
     )
 
     async def __call__(self, context: AgentContext, config, **_) -> str:

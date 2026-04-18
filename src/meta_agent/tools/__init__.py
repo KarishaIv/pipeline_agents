@@ -10,6 +10,7 @@ from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool, ValidateCode
 from src.meta_agent.tools.dto_tools import ListDtoNamesTool, SampleDtoTool
 from src.meta_agent.tools.output_tools import (
     AnalysisReportTool,
+    AnalyzerDecisionTool,
     CodeWriterTool,
     CodeExecutionReportTool,
     DataExtractionReportTool,
@@ -40,6 +41,7 @@ __all__ = [
     "SupervisorDecisionTool",
     "DataExtractionReportTool",
     "AnalysisReportTool",
+    "AnalyzerDecisionTool",
     "CodeWriterTool",
     "CodeExecutionReportTool",
     # Инструменты аналитики

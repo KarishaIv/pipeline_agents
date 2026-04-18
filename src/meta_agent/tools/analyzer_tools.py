@@ -23,8 +23,9 @@ from openai import AsyncOpenAI
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
-from config import PROJECT_ROOT, YANDEX_BASE_URL, get_model_uri
-from src.meta_agent.tools.dto_tools import dto_summary_view, get_dto
+from config import YANDEX_BASE_URL, get_model_uri
+from src.meta_agent.config import CHARTS_DIR
+from src.meta_agent.tools.dto_tools import _dto_to_dataframe, dto_summary_view, get_dto
 from src.meta_agent.utils import truncate_output_value
 
 if TYPE_CHECKING:
@@ -32,18 +33,6 @@ if TYPE_CHECKING:
     from sgr_agent_core.agent_definition import AgentConfig
 
 logger = logging.getLogger("meta_agent.analyzer")
-
-CHARTS_DIR = PROJECT_ROOT / "charts"
-
-
-def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
-    rows = dto_payload.get("rows", [])
-    columns = dto_payload.get("columns", [])
-    if isinstance(rows, list) and rows:
-        return pd.DataFrame(rows)
-    if isinstance(columns, list):
-        return pd.DataFrame(columns=columns)
-    return pd.DataFrame()
 
 
 def _resolve_dto_for_tool(context: "AgentContext", dto_name: str) -> tuple[pd.DataFrame | None, dict[str, Any] | None, str | None]:

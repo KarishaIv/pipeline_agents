@@ -4,9 +4,39 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import Any, Annotated
 
 from src.meta_agent.config import MAX_HISTORY_CHARS
+
+
+def append_history(left: list[dict], right: list[dict] | dict | None) -> list[dict]:
+    """LangGraph reducer for history field: appends new entries (supports list or single dict update)."""
+    if right is None:
+        return left
+    if isinstance(right, dict):
+        right = [right]
+    if isinstance(right, list):
+        return (left or []) + right
+    return left or []
+
+
+def merge_dto_store(left: dict[str, dict], right: dict[str, dict] | None) -> dict[str, dict]:
+    """LangGraph reducer for dto_store: merges new DTO payloads (last writer wins on key collision)."""
+    merged = dict(left) if left else {}
+    if isinstance(right, dict):
+        merged.update(right)
+    return merged
+
+
+def state_to_dict(state: dict | Any) -> dict:
+    """Convert LangGraph state (Pydantic MetaAgentState or dict) to plain dict.
+
+    This is the bridge when using Pydantic state schema with reducers.
+    Nodes can continue to use dict interface while benefiting from reducers.
+    """
+    if hasattr(state, "model_dump"):
+        return state.model_dump()
+    return dict(state) if not isinstance(state, dict) else state
 
 _TRUNCATION_MARKER = "…(история обрезана)…\n\n"
 
@@ -83,37 +113,38 @@ def truncate_history_list(history: list, max_chars: int | None = None) -> list:
     return [trimmed_latest]
 
 
-def resolve_thread_id(thread_id: str | None, last_thread_id: str | None) -> str:
+def resolve_thread_id(thread_id: str | None) -> str:
     """Определить идентификатор сессии по правилам API.
 
     - thread_id == "-1": всегда создать новую сессию;
-    - thread_id is None: использовать предыдущую сессию, если есть;
+    - thread_id is None: создать новую сессию;
     - иначе: использовать переданный thread_id.
     """
-    if thread_id == "-1":
+    if thread_id == "-1" or thread_id is None:
         return str(uuid.uuid7())
-    if thread_id is None:
-        return last_thread_id or str(uuid.uuid7())
     return thread_id
 
 
 def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
-    """Собрать state update для очередного хода с добавлением вопроса в историю."""
+    """Собрать state update для очередного хода с добавлением вопроса в историю.
+
+    Explicitly resets control fields while preserving dto_store and history.
+    The reducers defined on MetaAgentState (append_history, merge_dto_store)
+    will handle how these updates are applied by LangGraph.
+    """
     existing_history = list(snapshot_values.get("history", []))
-    if snapshot_values:
-        state_update = {"question": question, "iterations": 0, "delegated_attempts": 0}
-    else:
-        state_update = {
-            "question": question,
-            "history": [],
-            "dto_store": {},
-            "next_worker": "",
-            "current_task": "",
-            "delegated_attempts": 0,
-            "answer": "",
-            "iterations": 0,
-        }
-    state_update["history"] = existing_history + [{"role": "user", "content": question}]
+    dto_store = snapshot_values.get("dto_store", {})
+
+    state_update = {
+        "question": question,
+        "iterations": 0,
+        "delegated_attempts": 0,
+        "next_worker": "",
+        "current_task": "",
+        "answer": "",
+        "dto_store": dict(dto_store),  # explicit copy for reducer
+        "history": existing_history + [{"role": "user", "content": question}],
+    }
     return state_update
 
 
@@ -130,13 +161,19 @@ def build_persisted_history(result: dict, question: str) -> list:
     return truncate_history_list(result_history)
 
 
-def route_supervisor(state: dict) -> str:
-    """Вернуть имя следующего узла по решению супервайзера."""
+def route_supervisor(state: dict | Any) -> str:
+    """Вернуть имя следующего узла по решению супервайзера.
+    Uses state_to_dict to support both dict and Pydantic MetaAgentState (from reducers).
+    """
+    state = state_to_dict(state)
     return state.get("next_worker", "end")
 
 
-def route_analyzer(state: dict) -> str:
-    """Вернуть следующий узел после analyzer: code_writer или supervisor."""
+def route_analyzer(state: dict | Any) -> str:
+    """Вернуть следующий узел после analyzer: code_writer или supervisor.
+    Uses state_to_dict to support both dict and Pydantic MetaAgentState (from reducers).
+    """
+    state = state_to_dict(state)
     next_worker = state.get("next_worker", "supervisor")
     if next_worker == "code_writer":
         return "code_writer"

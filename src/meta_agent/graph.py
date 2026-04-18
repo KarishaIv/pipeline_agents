@@ -2,17 +2,18 @@
 
 import logging
 import time
-from typing import NamedTuple
+from typing import Annotated, Any, NamedTuple
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langsmith import traceable
-from typing_extensions import TypedDict
-
+from pydantic import BaseModel, Field
 from src.meta_agent.nodes import analyzer_node, code_writer_node, data_extractor_node, supervisor_node
 from src.meta_agent.utils import (
+    append_history,
     build_persisted_history,
     build_turn_state_update,
+    merge_dto_store,
     resolve_thread_id,
     route_analyzer,
     route_supervisor,
@@ -25,15 +26,28 @@ class MetaAgentResult(NamedTuple):
     thread_id: str
 
 
-class MetaAgentState(TypedDict):
-    question: str
-    history: list          # [{"role": str, "content": str}]
-    dto_store: dict        # {dto_name: dto_payload}
-    next_worker: str       # решение маршрутизации
-    current_task: str      # задача верхнего уровня для следующего воркера
-    delegated_attempts: int  # число делегаций analyzer -> code_writer в текущем прогоне
-    answer: str            # заполняется при next_worker == "end"
-    iterations: int
+class MetaAgentState(BaseModel):
+    """Pydantic model for graph state using LangGraph reducers for safe updates.
+
+    Uses Annotated reducers so that partial dict updates from nodes are merged
+    correctly (history appends instead of overwriting; dto_store merges).
+    This is the idiomatic LangGraph built-in approach for Pydantic state.
+    """
+    question: str = Field(default="")
+    # Reducers ensure history always appends and dto_store merges safely
+    history: Annotated[list[dict[str, Any]], append_history] = Field(
+        default_factory=list
+    )  # [{"role": str, "content": str}]
+    dto_store: Annotated[dict[str, dict[str, Any]], merge_dto_store] = Field(
+        default_factory=dict
+    )  # {dto_name: dto_payload}
+    next_worker: str = Field(default="")
+    current_task: str = Field(default="")
+    delegated_attempts: int = Field(default=0)
+    answer: str = Field(default="")
+    iterations: int = Field(default=0)
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class MetaAgentGraphManager:
@@ -42,10 +56,11 @@ class MetaAgentGraphManager:
     def __init__(self) -> None:
         self._checkpointer = InMemorySaver()
         self._graph = None
-        self._last_thread_id: str | None = None
 
     def _build_graph(self):
-        """Собрать и скомпилировать граф с checkpointer-ом в памяти."""
+        """Собрать и скомпилировать граф с checkpointer-ом в памяти.
+        Uses Pydantic MetaAgentState with LangGraph reducers for history and dto_store.
+        """
         graph = StateGraph(MetaAgentState)
 
         graph.add_node("supervisor", supervisor_node)
@@ -76,24 +91,41 @@ class MetaAgentGraphManager:
         return self._graph
 
     def _resolve_session_thread_id(self, thread_id: str | None) -> str:
-        """Разрешить thread_id для текущего запроса и запомнить его."""
-        resolved = resolve_thread_id(thread_id, self._last_thread_id)
-        self._last_thread_id = resolved
+        """Разрешить thread_id для текущего запроса."""
+        resolved = resolve_thread_id(thread_id)
         return resolved
 
     async def _prepare_invoke(self, question: str, thread_id: str) -> tuple[dict, dict]:
-        """Сформировать config и state update до вызова графа."""
+        """Сформировать config и state update до вызова графа.
+
+        Uses LangGraph's Pydantic state support + reducers. We always validate
+        the snapshot to a MetaAgentState instance for consistent .model_dump().
+        Reducers (append_history, merge_dto_store) handle partial updates from nodes.
+        """
         graph = self.get_graph()
         runnable_config: dict = {"configurable": {"thread_id": thread_id}}
         state_snapshot = await graph.aget_state(runnable_config)
-        state_update = build_turn_state_update(question, state_snapshot.values)
+
+        # LangGraph checkpoint returns dict; validate to model for type safety
+        if isinstance(state_snapshot.values, dict):
+            state_model = MetaAgentState.model_validate(state_snapshot.values)
+        else:
+            state_model = state_snapshot.values
+
+        snapshot_values = state_model.model_dump()
+        state_update = build_turn_state_update(question, snapshot_values)
         return runnable_config, state_update
 
-    async def _finalize_invoke(self, runnable_config: dict, result: dict, question: str) -> str:
-        """Сохранить обновлённую историю после вызова графа и вернуть ответ."""
+    async def _finalize_invoke(self, runnable_config: dict, result: Any, question: str) -> str:
+        """Сохранить обновлённую историю после вызова графа и вернуть ответ.
+
+        Uses LangGraph aupdate_state. The history reducer will handle appending.
+        """
         graph = self.get_graph()
-        answer = result.get("answer", "")
-        truncated_history = build_persisted_history(result, question)
+        result_dict = result.model_dump() if hasattr(result, "model_dump") else result
+        answer = result_dict.get("answer", "")
+        truncated_history = build_persisted_history(result_dict, question)
+        # Only update history; reducers + other fields from previous state are preserved
         await graph.aupdate_state(runnable_config, {"history": truncated_history})
         return answer
 

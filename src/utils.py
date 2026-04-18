@@ -413,6 +413,8 @@ def _fetch_embedding(text: str, model_suffix: str) -> List[float]:
 
 def get_embedding(text: str, query: bool = True) -> List[float]:
     """Возвращает embedding текста через Yandex Embeddings API."""
+    if not text or not text.strip():
+        text = "none"
     suffix = "text-search-query" if query else "text-search-doc"
     return _fetch_embedding(text, suffix)
 
@@ -429,4 +431,8 @@ def get_clear_personas(personas: pd.DataFrame) -> pd.DataFrame:
     """
     Возвращает только относящиеся к персонам поля.
     """
-    return personas[persona_characteristics]
+    if isinstance(personas, pd.Series):
+        cols = [c for c in persona_characteristics if c in personas.index]
+    else:
+        cols = [c for c in persona_characteristics if c in personas.columns]
+    return personas[cols]

@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any, TYPE_CHECKING
 
+import pandas as pd
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
@@ -51,9 +52,7 @@ def _normalize_rows(data: Any) -> list[dict[str, Any]]:
     if isinstance(data, list):
         if not data:
             return []
-        if all(isinstance(item, dict) for item in data):
-            return data
-        return [{"value": item} for item in data]
+        return [item if isinstance(item, dict) else {"value": item} for item in data]
     return [{"value": data}]
 
 
@@ -66,6 +65,18 @@ def _infer_columns(rows: list[dict[str, Any]]) -> list[str]:
                 ordered.append(key)
                 seen.add(key)
     return ordered
+
+
+def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
+    """Helper to convert DTO payload (with 'rows' or 'columns') to pandas DataFrame.
+    """
+    rows = dto_payload.get("rows", [])
+    columns = dto_payload.get("columns", [])
+    if isinstance(rows, list) and rows:
+        return pd.DataFrame(rows)
+    if isinstance(columns, list):
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame()
 
 
 def _sanitize_source(source: str) -> str:

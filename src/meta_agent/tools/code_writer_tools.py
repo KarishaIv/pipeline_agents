@@ -8,10 +8,12 @@ import io
 import json
 import math
 import os
+import re
 import statistics as _stats
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 import matplotlib
@@ -22,15 +24,13 @@ import pandas as pd
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
-from config import PROJECT_ROOT
-from src.meta_agent.tools.dto_tools import get_dto
+from src.meta_agent.config import CHARTS_DIR, CODE_TIMEOUT
+from src.meta_agent.tools.dto_tools import _dto_to_dataframe, get_dto
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
     from sgr_agent_core.agent_definition import AgentConfig
 
-CHARTS_DIR = PROJECT_ROOT / "charts"
-CODE_TIMEOUT = 30
 DTO_ENV_VAR = "DTO_DATA_JSON"
 
 _SAFE_BUILTINS: dict = {
@@ -74,16 +74,6 @@ _SAFE_BUILTINS: dict = {
 }
 
 
-def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
-    rows = dto_payload.get("rows", [])
-    columns = dto_payload.get("columns", [])
-    if isinstance(rows, list) and rows:
-        return pd.DataFrame(rows)
-    if isinstance(columns, list):
-        return pd.DataFrame(columns=columns)
-    return pd.DataFrame()
-
-
 def _resolve_dto_payload(context: "AgentContext", dto_name: str) -> tuple[dict[str, Any] | None, str | None]:
     try:
         dto_payload = get_dto(context, dto_name)
@@ -95,12 +85,37 @@ def _resolve_dto_payload(context: "AgentContext", dto_name: str) -> tuple[dict[s
     return dto_payload, None
 
 
+def _sanitize_filename(name: str) -> str:
+    """Sanitize filename to prevent path traversal and injection attacks.
+    Removes dangerous characters, prevents .. / \\, falls back to safe default.
+    Part of security hardening for code execution sandbox.
+    """
+    if not name:
+        name = "chart.png"
+    # Remove or replace dangerous chars
+    sanitized = re.sub(r"[^\w\.-]", "_", name.strip())
+    sanitized = re.sub(r"_+", "_", sanitized)
+    # Prevent path traversal
+    if ".." in sanitized or "/" in sanitized or "\\" in sanitized or sanitized.startswith("."):
+        sanitized = f"safe_chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    # Ensure extension
+    if not sanitized.lower().endswith((".png", ".jpg", ".jpeg", ".pdf")):
+        sanitized += ".png"
+    return sanitized
+
+
 def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list, dto_payload: dict[str, Any] | None = None) -> dict:
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
     def _save_chart(filename: str | None = None) -> str:
         name = filename or f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
-        path = str(CHARTS_DIR / name)
+        safe_name = _sanitize_filename(name)
+        path = str(CHARTS_DIR / safe_name)
+        # Additional resolve check for security
+        resolved_path = Path(path).resolve()
+        if not str(CHARTS_DIR.resolve()) in str(resolved_path):
+            safe_name = _sanitize_filename("fallback.png")
+            path = str(CHARTS_DIR / safe_name)
         plt.savefig(path, bbox_inches="tight", dpi=150)
         plt.close()
         saved_charts.append(path)
@@ -235,17 +250,18 @@ class ValidateCodeTool(BaseTool):
             diagnostics["errors"].append("Код пустой")
             return json.dumps(diagnostics, ensure_ascii=False)
 
-        if "__import__" in stripped:
-            diagnostics["warnings"].append(
-                "Обнаружен __import__. В песочнице запрещены произвольные импорты."
-            )
-        if "open(" in stripped:
-            diagnostics["warnings"].append(
-                "Обнаружен open(). Доступ к файловой системе в песочнице недоступен."
-            )
-
         try:
             tree = ast.parse(stripped, mode="exec")
+            
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    diagnostics["warnings"].append("Обнаружен импорт. В песочнице запрещены произвольные импорты.")
+                elif isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name) and node.func.id in {"open", "exec", "eval", "__import__"}:
+                        diagnostics["warnings"].append(f"Обнаружен вызов {node.func.id}(). Доступ к этим функциям в песочнице запрещен.")
+                    elif isinstance(node.func, ast.Attribute) and node.func.attr in {"open", "exec", "eval", "__import__"}:
+                        diagnostics["warnings"].append(f"Обнаружен вызов атрибута {node.func.attr}(). Доступ к этим функциям в песочнице запрещен.")
+
             compile(tree, "<code_writer_validate>", "exec")
             diagnostics["syntax_ok"] = True
         except SyntaxError as exc:

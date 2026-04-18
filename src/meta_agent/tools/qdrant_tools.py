@@ -9,6 +9,7 @@ from qdrant_client import QdrantClient, models
 
 from sgr_agent_core.base_tool import BaseTool
 
+from src.meta_agent.config import QDRANT_HOST, QDRANT_PORT
 from src.meta_agent.tools.dto_tools import dto_summary_view, register_dto
 from src.utils import get_embedding
 
@@ -24,10 +25,10 @@ COLLECTION_ENUM_DESC = "Имя коллекции Qdrant (как в базе): "
 CollectionName = Literal["questions", "personas", "target_audiences", "simulations"]
 
 # ---------------------------------------------------------------------------
-# Низкоуровневый клиент Qdrant
+# Низкоуровневый клиент Qdrant (configured via meta_agent.config)
 # ---------------------------------------------------------------------------
 
-_qdrant = QdrantClient(host="localhost", port=6333)
+_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
 
 def _qdrant_failure_payload(operation: str, exc: BaseException) -> str:

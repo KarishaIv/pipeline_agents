@@ -528,10 +528,10 @@ def get_sim_reasonings(state: Dict) -> Dict[str, List[str]]:
 
 def get_sim_last_reactions(state: Dict) -> Dict[str, str]:
     return {
-        "emotional_reaction": state['emotional_history'][-1]['reaction'],
-        "rational_reaction": state['rational_history'][-1]['reaction'],
-        "social_reaction": state['social_history'][-1]['reaction'],
-        "ideological_reaction": state['ideological_history'][-1]['reaction'],
+        "emotional_reaction": state['emotional_history'][-1]['reaction'] if state.get('emotional_history') else "",
+        "rational_reaction": state['rational_history'][-1]['reaction'] if state.get('rational_history') else "",
+        "social_reaction": state['social_history'][-1]['reaction'] if state.get('social_history') else "",
+        "ideological_reaction": state['ideological_history'][-1]['reaction'] if state.get('ideological_history') else "",
     }
 
 def get_sim_embeddings(state: Dict) -> Dict[str, List[float]]:
