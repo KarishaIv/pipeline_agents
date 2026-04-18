@@ -164,6 +164,42 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
         parsed, delegated_attempts, result["dto_store"]
     )
 
+    if decision.decision == "report":
+        findings_text = "\n".join(f"- {item}" for item in decision.key_findings)
+        content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {decision.conclusions}"
+        return {
+            "next_worker": "supervisor",
+            "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+            "dto_store": _extract_dto_store(run_result.context),
+            "delegated_attempts": delegated_attempts,
+        }
+
+    # delegate to code_writer
+    if delegated_attempts >= MAX_DELEGATED_ATTEMPTS:
+        limit_content = (
+            f"[ЛИМИТ ДЕЛЕГИРОВАНИЯ] Достигнут лимит переходов analyzer -> code_writer: "
+            f"{MAX_DELEGATED_ATTEMPTS}. Продолжаю без новых делегаций."
+        )
+        return {
+            "next_worker": "supervisor",
+            "history": state.get("history", []) + [{"role": "analyzer", "content": limit_content}],
+            "dto_store": _extract_dto_store(run_result.context),
+            "delegated_attempts": delegated_attempts,
+        }
+
+    decision_content = (
+        "Решение аналитика: code_writer.\n"
+        f"Причина: {decision.delegate_reason or decision.reasoning}\n"
+        f"Задача: {decision.task}"
+    )
+    return {
+        "next_worker": "code_writer",
+        "current_task": decision.task,
+        "history": state.get("history", []) + [{"role": "analyzer", "content": decision_content}],
+        "dto_store": _extract_dto_store(run_result.context),
+        "delegated_attempts": delegated_attempts + 1,
+    }
+
 
 @traceable(name="node.code_writer", run_type="chain")
 async def code_writer_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
