@@ -23,6 +23,5 @@ CHARTS_DIR: Path = PROJECT_ROOT / "charts"
 CODE_TIMEOUT = 30
 
 # Модели LLM (BIG_MODEL используется для code_writer)
-LLM_MODEL = "yandexgpt-5.1"
-BIG_MODEL = "yandexgpt-5.1"
-# BIG_MODEL = "qwen3-235b-a22b-fp8"
+LLM_MODEL = "aliceai-llm"
+BIG_MODEL = "aliceai-llm"
