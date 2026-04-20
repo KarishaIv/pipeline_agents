@@ -10,7 +10,7 @@ import pandas as pd
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
-from src.meta_agent.utils import truncate_output_value
+from src.meta_agent.utils.history import truncate_output_value
 
 if TYPE_CHECKING:
     from sgr_agent_core.agent_definition import AgentConfig
@@ -198,3 +198,35 @@ class SampleDtoTool(BaseTool):
             ensure_ascii=False,
             default=str,
         )
+
+
+def resolve_dto_or_error(
+    context: "AgentContext", dto_name: str
+) -> tuple[pd.DataFrame | None, dict[str, Any] | None, str | None]:
+    """Унифицированный resolver DTO для инструментов анализатора и code_writer.
+
+    Возвращает (df, payload, error_json_str). Если DTO не найден — возвращает error_json
+    """
+    try:
+        dto_payload = get_dto(context, dto_name)
+    except KeyError:
+        return None, None, json.dumps(
+            {"error": f"DTO '{dto_name}' не найден. Сначала вызови list_dtos."},
+            ensure_ascii=False,
+        )
+
+    df = dto_to_dataframe(dto_payload)
+    return df, dto_payload, None
+
+
+def dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
+    """Преобразует payload DTO в pandas DataFrame (публичная версия _dto_to_dataframe)
+    """
+    rows = dto_payload.get("rows", [])
+    columns = dto_payload.get("columns", [])
+    
+    if isinstance(rows, list) and rows:
+        return pd.DataFrame(rows)
+    if isinstance(columns, list):
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame()

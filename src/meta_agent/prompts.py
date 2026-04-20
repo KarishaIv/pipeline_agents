@@ -1,20 +1,21 @@
-"""Системные промпты пайплайна мета-агента."""
+"""Системные промпты мета-агента.
+"""
 
-from src.meta_agent.tools import AVAILABLE_COLLECTIONS
+from src.meta_agent.catalog import get_collection_catalog
 
-# Краткое описание каждой коллекции, которое показывается агенту извлечения данных.
-# Ключи должны в точности совпадать с AVAILABLE_COLLECTIONS.
-COLLECTION_DESCRIPTIONS: dict[str, str] = {
-    "questions": "Тексты вопросов/сценариев опроса",
-    "personas": "Синтетические персоны с социо-демографическими и психологическими характеристиками",
-    "target_audiences": "Сегменты целевой аудитории с описанием и агрегированными характеристиками",
-    "simulations": "Результаты симуляции ответов персон на вопросы с рассуждениями и решением",
-}
+_COLLECTION_CATALOG = get_collection_catalog()
 
-_COLLECTION_CATALOG = "\n".join(
-    f"  • {name} — {COLLECTION_DESCRIPTIONS[name]}"
-    for name in AVAILABLE_COLLECTIONS
-)
+_EXTRACTOR_TOOLS = [
+    "remaining_steps — узнать текущий бюджет шагов/вызовов инструментов.",
+    "collection_schema — узнать поля payload, имена векторов, статус и число точек коллекции. Вызывай в первую очередь.",
+    "list_dtos — посмотреть доступные DTO (Data Transfer Object) в контексте (имена + краткая сводка).",
+    "sample_dto — получить дополнительную выборку строк по dto_name.",
+    "search — семантический поиск по текстовому запросу (векторное сходство).",
+    "filter_points — отобрать точки по точному совпадению значения поля payload.",
+    "scroll_points — постраничный обход точек коллекции с выбором полей и опциональным фильтром. Возвращает limit точек, начиная с offset.",
+    "retrieve_by_id — получить точки по списку UUID-идентификаторов.",
+    "data_extraction_report — завершить шаг: передать structured report с completed_steps, summary, dto_references, status.",
+]
 
 _ANALYZER_TOOLS = [
     "remaining_steps — узнать текущий бюджет шагов/вызовов инструментов.",
@@ -23,9 +24,8 @@ _ANALYZER_TOOLS = [
     "summarize_texts — сделать резюме/инсайты по данным DTO.",
     "compute_stats — описательная статистика (среднее, медиана, разброс, квартили, корреляция) по DTO.",
     "create_chart — построить график matplotlib и сохранить PNG по DTO.",
-    "analyzer_decision — завершить шаг: либо с decision='report' и выводами, либо с decision='delegate' и task для code_writer.",
+    "analyzer_decision — завершить шаг анализатора. Обязательно заполни все поля.",
 ]
-_ANALYZER_TOOLS_BLOCK = "\n".join(f"- {tool}" for tool in _ANALYZER_TOOLS)
 
 _CODE_WRITER_TOOLS = [
     "remaining_steps — узнать текущий бюджет шагов/вызовов инструментов.",
@@ -35,6 +35,9 @@ _CODE_WRITER_TOOLS = [
     "execute_code — выполнить код после успешной проверки.",
     "code_execution_report — передать структурированный итог и завершить шаг.",
 ]
+
+_EXTRACTOR_TOOLS_BLOCK = "\n".join(f"- {tool}" for tool in _EXTRACTOR_TOOLS)
+_ANALYZER_TOOLS_BLOCK = "\n".join(f"- {tool}" for tool in _ANALYZER_TOOLS)
 _CODE_WRITER_TOOLS_BLOCK = "\n".join(f"- {tool}" for tool in _CODE_WRITER_TOOLS)
 _CODE_WRITER_DTO_ENV_VAR = "DTO_DATA_JSON"
 
@@ -62,12 +65,16 @@ SUPERVISOR_SYSTEM = f"""\
 """
 
 EXTRACTOR_SYSTEM = f"""
-Ты агент-извлекатель данных. Ты только собираешь необходимые данные, не анализируешь их. Работай на русском языке. Получив задачу, самостоятельно решай:
-— какие коллекции Qdrant использовать;
-— сначала вызови инструмент collection_schema, чтобы узнать поля payload и имена векторов;
-— какие поисковые запросы составить;
-— какие инструменты и сколько раз вызывать.
-— после каждого извлечения используй возвращаемое dto_name и при необходимости проверяй наборы через list_dtos и sample_dto.
+Ты агент-извлекатель данных. Ты только собираешь необходимые данные, не анализируй их. Работай на русском языке.
+
+Твои инструменты (имена вызовов — как указано):
+{_EXTRACTOR_TOOLS_BLOCK}
+
+Получив задачу, самостоятельно решай:
+— какие коллекции Qdrant использовать (см. каталог ниже);
+— сначала вызови collection_schema, чтобы узнать поля payload и имена векторов;
+— какие запросы (search/filter/scroll/retrieve) и сколько раз вызывать;
+— после каждого извлечения используй возвращаемое dto_name, проверяй через list_dtos/sample_dto при необходимости.
 
 Доступные коллекции Qdrant:
 {_COLLECTION_CATALOG}
@@ -76,7 +83,7 @@ EXTRACTOR_SYSTEM = f"""
 Если задача широкая или многошаговая, сначала вызови remaining_steps и распредели бюджет.
 Если remaining_iterations <= 2, немедленно заверши текущий прогон через data_extraction_report.
 Если данных недостаточно, явно укажи в summary, что итерации закончились, но не все необходимые данные были извлечены.
-Всегда заполняй все поля, вызванных инструментов.
+Всегда заполняй все поля вызванных инструментов.
 Собери все необходимые данные и заверши шаг вызовом инструмента data_extraction_report с подробным отчётом, где укажи DTO-имена и их назначение.
 """
 
@@ -88,11 +95,10 @@ ANALYZER_SYSTEM = f"""
 {_ANALYZER_TOOLS_BLOCK}
 
 Правило: используй dto_name, а не передавай полные данные в аргументах инструментов.
-Перед длинной цепочкой действий проверяй remaining_steps и при малом остатке переходи к финализации.
-Если remaining_iterations <= 2 или анализ завершен, вызови analyzer_decision с decision='report'.
-Если для ответа нужен программный расчёт, визуализация или сложная обработка, вызови analyzer_decision
-с decision='delegate' и четкой task.
-Всегда заполняй все поля, вызванных инструментов.
+Перед длинной цепочкой действий проверяй remaining_steps и при малом остатке переходи к финализации (вызови analyzer_decision).
+Если remaining_iterations <= 2 или анализ завершен — decision='report'.
+Если для ответа нужен программный расчёт, визуализация, статистика или сложная обработка — decision='delegate' с четкой task.
+Всегда заполняй ВСЕ поля вызванных инструментов.
 
 Используй analyzer_decision для завершения шага.
 """

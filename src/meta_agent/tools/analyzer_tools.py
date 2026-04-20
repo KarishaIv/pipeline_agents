@@ -12,40 +12,24 @@ import logging
 import os
 import traceback
 from datetime import datetime
-from typing import Any, List, Literal, TYPE_CHECKING
+from typing import List, Literal, TYPE_CHECKING
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 from openai import AsyncOpenAI
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
 from config import YANDEX_BASE_URL, get_model_uri
 from src.meta_agent.config import CHARTS_DIR
-from src.meta_agent.tools.dto_tools import _dto_to_dataframe, dto_summary_view, get_dto
-from src.meta_agent.utils import truncate_output_value
+from src.meta_agent.tools.dto_tools import dto_summary_view, resolve_dto_or_error
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
     from sgr_agent_core.agent_definition import AgentConfig
 
 logger = logging.getLogger("meta_agent.analyzer")
-
-
-def _resolve_dto_for_tool(context: "AgentContext", dto_name: str) -> tuple[pd.DataFrame | None, dict[str, Any] | None, str | None]:
-    try:
-        dto_payload = get_dto(context, dto_name)
-    except KeyError:
-        return None, None, json.dumps(
-            {"error": f"DTO '{dto_name}' не найден. Сначала вызови list_dtos."},
-            ensure_ascii=False,
-        )
-
-    df = _dto_to_dataframe(dto_payload)
-    return df, dto_payload, None
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +56,7 @@ class ComputeStatsTool(BaseTool):
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        df, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert df is not None and dto_payload is not None
@@ -123,7 +107,7 @@ class CreateChartTool(BaseTool):
     y_label: str = Field(default="", description="Подпись оси Y")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        df, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert df is not None and dto_payload is not None
@@ -259,7 +243,7 @@ class SummarizeTextsTool(BaseTool):
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        df, dto_payload, error = _resolve_dto_for_tool(context, self.dto_name)
+        df, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert df is not None and dto_payload is not None

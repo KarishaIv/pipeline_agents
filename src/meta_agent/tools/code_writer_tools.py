@@ -25,7 +25,7 @@ from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
 from src.meta_agent.config import CHARTS_DIR, CODE_TIMEOUT
-from src.meta_agent.tools.dto_tools import _dto_to_dataframe, get_dto
+from src.meta_agent.tools.dto_tools import dto_to_dataframe, resolve_dto_or_error
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
@@ -72,17 +72,6 @@ _SAFE_BUILTINS: dict = {
     "KeyError": KeyError,
     "TypeError": TypeError,
 }
-
-
-def _resolve_dto_payload(context: "AgentContext", dto_name: str) -> tuple[dict[str, Any] | None, str | None]:
-    try:
-        dto_payload = get_dto(context, dto_name)
-    except KeyError:
-        return None, json.dumps(
-            {"error": f"DTO '{dto_name}' не найден. Сначала вызови list_dtos."},
-            ensure_ascii=False,
-        )
-    return dto_payload, None
 
 
 def _sanitize_filename(name: str) -> str:
@@ -139,7 +128,7 @@ def _make_sandbox(stdout_buf: io.StringIO, saved_charts: list, dto_payload: dict
 
     if dto_payload is not None:
         namespace["dto"] = dto_payload
-        namespace["df"] = _dto_to_dataframe(dto_payload)
+        namespace["df"] = dto_to_dataframe(dto_payload)
 
     return namespace
 
@@ -193,7 +182,7 @@ class ExecuteCodeTool(BaseTool):
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        dto_payload, error = _resolve_dto_payload(context, self.dto_name)
+        _, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert dto_payload is not None
@@ -233,7 +222,7 @@ class ValidateCodeTool(BaseTool):
     code: str = Field(description="Код Python только для статической проверки")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        dto_payload, error = _resolve_dto_payload(context, self.dto_name)
+        _, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert dto_payload is not None

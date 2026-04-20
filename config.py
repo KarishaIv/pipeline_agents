@@ -8,8 +8,6 @@ YANDEX_BASE_URL = "https://llm.api.cloud.yandex.net/v1"
 YANDEX_EMBED_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
 
 LLM_MODEL = "yandexgpt-5.1"
-BIG_MODEL = "yandexgpt-5.1"
-# BIG_MODEL = "qwen3-235b-a22b-fp8"
 
 
 def get_model_uri(model: str = None) -> str:

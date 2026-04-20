@@ -27,6 +27,7 @@ class SupervisorDecisionTool(SystemBaseTool):
     )
 
     reasoning: str = Field(
+        default="",
         description="Анализ текущего состояния и обоснование решения"
     )
     next: Literal["data_extractor", "analyzer", "end"] = Field(
@@ -38,6 +39,7 @@ class SupervisorDecisionTool(SystemBaseTool):
         )
     )
     task: str = Field(
+        default="",
         description=(
             "Краткая формулировка задачи для выбранного агента: ЧТО сделать, не КАК. "
             "Пустая строка, если next=end."
@@ -64,19 +66,26 @@ class DataExtractionReportTool(SystemBaseTool):
         "и завершить шаг агента-извлекателя."
     )
 
-    reasoning: str = Field(description="Что искали, в каких коллекциях и зачем")
+    reasoning: str = Field(
+        default="",
+        description="Что искали, в каких коллекциях и зачем"
+    )
     completed_steps: List[str] = Field(
-        description="Упорядоченный список выполненных шагов извлечения",
-        min_length=1,
-        max_length=10,
+        default_factory=list,
+        description="Упорядоченный список выполненных шагов извлечения (минимум 1 при успехе)",
+        min_length=0,
+        max_length=20,
     )
     summary: str = Field(
+        default="",
         description="Краткий итог извлечения (DTO-имена, назначение, важные поля и объёмы) в виде JSON-строки"
     )
     dto_references: str = Field(
+        default="",
         description="Ссылки на DTO и служебные метаданные (без полного дампа rows) в виде JSON-строки"
     )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
+        default=AgentStatesEnum.COMPLETED,
         description="Статус извлечения: успех или сбой"
     )
 
@@ -86,56 +95,6 @@ class DataExtractionReportTool(SystemBaseTool):
         context.execution_result = payload
         return payload
 
-
-class AnalysisReportTool(SystemBaseTool):
-    """Структурированные аналитические выводы; завершает шаг аналитика."""
-
-    tool_name = "analysis_report"
-    description = (
-        "Передать итоговые структурированные выводы анализа и завершить шаг агента-аналитика."
-    )
-
-    reasoning: str = Field(description="Выбранный подход и методика анализа")
-    completed_steps: List[str] = Field(
-        description="Упорядоченный список выполненных шагов анализа",
-        min_length=1,
-        max_length=10,
-    )
-    key_findings: List[str] = Field(
-        description="Ключевые находки и закономерности по данным"
-    )
-    conclusions: str = Field(
-        description="Развёрнутые аналитические выводы на русском языке"
-    )
-    status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
-        description="Статус анализа: успех или сбой"
-    )
-
-    async def __call__(self, context: AgentContext, config, **_) -> str:
-        context.state = self.status
-        payload = self.model_dump_json()
-        context.execution_result = payload
-        return payload
-
-
-class CodeWriterTool(SystemBaseTool):
-    """Задача от аналитика, которую нужно передать агенту code_writer."""
-
-    tool_name = "code_writer"
-    description = (
-        "Передать задачу для code_writer и завершить текущий шаг аналитика."
-    )
-
-    reasoning: str = Field(description="Почему требуется делегировать задачу code_writer")
-    task: str = Field(
-        description="Задача для code_writer (что посчитать/проверить/визуализировать).",
-    )
-
-    async def __call__(self, context: AgentContext, config, **_) -> str:
-        context.state = AgentStatesEnum.COMPLETED
-        payload = self.model_dump_json()
-        context.execution_result = payload
-        return payload
 
 
 class CodeExecutionReportTool(SystemBaseTool):
@@ -147,13 +106,32 @@ class CodeExecutionReportTool(SystemBaseTool):
         "завершить шаг code_writer."
     )
 
-    reasoning: str = Field(description="Подход к решению и ключевые решения по коду")
-    task: str = Field(description="Исходная задача для code_writer")
-    code: str = Field(description="Итоговый исполняемый код")
-    validation: str = Field(description="JSON-строка результата validate_code")
-    execution: str = Field(description="JSON-строка результата execute_code")
-    findings: List[str] = Field(description="Ключевые наблюдения из выполнения кода")
+    reasoning: str = Field(
+        default="",
+        description="Подход к решению и ключевые решения по коду"
+    )
+    task: str = Field(
+        default="",
+        description="Исходная задача для code_writer"
+    )
+    code: str = Field(
+        default="",
+        description="Итоговый исполняемый код"
+    )
+    validation: str = Field(
+        default="",
+        description="JSON-строка результата validate_code"
+    )
+    execution: str = Field(
+        default="",
+        description="JSON-строка результата execute_code"
+    )
+    findings: List[str] = Field(
+        default_factory=list,
+        description="Ключевые наблюдения из выполнения кода"
+    )
     status: Literal[AgentStatesEnum.COMPLETED, AgentStatesEnum.FAILED] = Field(
+        default=AgentStatesEnum.COMPLETED,
         description="Статус выполнения code_writer: успех или сбой"
     )
 
@@ -175,7 +153,10 @@ class AnalyzerDecisionTool(SystemBaseTool):
         "либо делегировать задачу code_writer (decision='delegate')."
     )
 
-    reasoning: str = Field(description="Краткий анализ текущей ситуации, данных и выбранного пути")
+    reasoning: str = Field(
+        default="",
+        description="Краткий анализ текущей ситуации, данных и выбранного пути (ОБЯЗАТЕЛЬНО заполнять)"
+    )
     decision: Literal["report", "delegate"] = Field(
         description="Тип решения: 'report' — завершить анализ с выводами; 'delegate' — передать code_writer"
     )

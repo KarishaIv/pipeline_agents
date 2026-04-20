@@ -1,39 +1,37 @@
-"""Функции клиента Qdrant и обёртки BaseTool для агентов."""
+"""Инструменты для работы с Qdrant.
 
+QdrantService — singleton.
+"""
+
+from __future__ import annotations
 import json
 import logging
-from typing import Any, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import Field
-from qdrant_client import QdrantClient, models
-
 from sgr_agent_core.base_tool import BaseTool
 
-from src.meta_agent.config import QDRANT_HOST, QDRANT_PORT
+if TYPE_CHECKING:
+    from sgr_agent_core.agent_definition import AgentConfig
+    from sgr_agent_core.models import AgentContext
+
+from src.meta_agent.catalog import CollectionName, COLLECTION_ENUM_DESC
+from src.meta_agent.services.qdrant import QdrantService
 from src.meta_agent.tools.dto_tools import dto_summary_view, register_dto
-from src.utils import get_embedding
 
 logger = logging.getLogger("meta_agent.qdrant")
 
-# ---------------------------------------------------------------------------
-# Константы
-# ---------------------------------------------------------------------------
 
-AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations"]
-COLLECTION_ENUM_DESC = "Имя коллекции Qdrant (как в базе): " + ", ".join(AVAILABLE_COLLECTIONS)
+def failure_payload(operation: str, exc: Exception | str | None = None) -> str:
+    """Формирует JSON-ошибку для возврата из qdrant tools.
 
-CollectionName = Literal["questions", "personas", "target_audiences", "simulations"]
-
-# ---------------------------------------------------------------------------
-# Низкоуровневый клиент Qdrant (configured via meta_agent.config)
-# ---------------------------------------------------------------------------
-
-_qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-
-
-def _qdrant_failure_payload(operation: str, exc: BaseException) -> str:
-    """Вернуть JSON-ошибку для агента вместо падения цикла выполнения."""
-
+    Перемещена из services.qdrant.py согласно требованиям.
+    Все ошибки (включая из QdrantService) обрабатываются здесь.
+    """
+    if isinstance(exc, str) or exc is None:
+        exc = RuntimeError(str(exc) if exc else "unknown qdrant error")
+    elif not isinstance(exc, Exception):
+        exc = RuntimeError(str(exc))
     return json.dumps(
         {
             "error": "ошибка_запроса_qdrant",
@@ -44,114 +42,13 @@ def _qdrant_failure_payload(operation: str, exc: BaseException) -> str:
     )
 
 
-def _point_to_dict(point) -> Dict[str, Any]:
-    return {"id": point.id, "score": getattr(point, "score", None), "payload": point.payload}
-
-
-def search(collection: str, query: str, vector_name: str = "embedding", limit: int = 5) -> List[Dict[str, Any]]:
-    vector = get_embedding(query)
-    hits = _qdrant.query_points(
-        collection_name=collection,
-        query=vector,
-        using=vector_name,
-        limit=limit,
-    ).points
-    return [_point_to_dict(h) for h in hits]
-
-
-def filter_points(collection: str, field: str, value: str, limit: int = 10) -> List[Dict[str, Any]]:
-    results, _ = _qdrant.scroll(
-        collection_name=collection,
-        scroll_filter=models.Filter(
-            must=[
-                models.FieldCondition(
-                    key=field,
-                    match=models.MatchValue(value=value),
-                )
-            ]
-        ),
-        limit=limit,
-    )
-    return [_point_to_dict(p) for p in results]
-
-
-def scroll_points(
-    collection: str,
-    limit: int = 10,
-    offset: Optional[str] = None,
-    payload_fields: Optional[List[str]] = None,
-    filter_field: Optional[str] = None,
-    filter_value: Optional[str] = None,
-) -> Dict[str, Any]:
-    scroll_filter = None
-    if filter_field is not None and filter_value is not None:
-        scroll_filter = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key=filter_field,
-                    match=models.MatchValue(value=filter_value),
-                )
-            ]
-        )
-
-    with_payload: bool | models.PayloadSelectorInclude
-    if payload_fields:
-        with_payload = models.PayloadSelectorInclude(include=payload_fields)
-    else:
-        with_payload = True
-
-    points, next_offset = _qdrant.scroll(
-        collection_name=collection,
-        limit=limit,
-        offset=offset,
-        scroll_filter=scroll_filter,
-        with_payload=with_payload,
-    )
-    return {
-        "points": [_point_to_dict(p) for p in points],
-        "next_offset": next_offset,
-    }
-
-
-def retrieve_by_id(collection: str, ids: List[str]) -> List[Dict[str, Any]]:
-    points = _qdrant.retrieve(
-        collection_name=collection,
-        ids=ids,
-    )
-    return [_point_to_dict(p) for p in points]
-
-
-def build_collection_schema(collection_name: str) -> Dict[str, Any]:
-    """Вызвать ``get_collection`` и вернуть имя, статус, число точек,
-    имена векторов и поля payload (из ``payload_schema``)."""
-    info = _qdrant.get_collection(collection_name=collection_name)
-
-    params = getattr(info.config, "params", None)
-    vec = getattr(params, "vectors", None) if params else None
-    if isinstance(vec, dict):
-        vector_names = list(vec.keys())
-    elif vec is not None:
-        vector_names = ["embedding"]
-    else:
-        vector_names = []
-
-    payload_fields: Dict[str, Any] = {}
-    for key, psi in (getattr(info, "payload_schema", None) or {}).items():
-        payload_fields[key] = {
-            "data_type": str(psi.data_type) if getattr(psi, "data_type", None) is not None else None,
-        }
-
-    return {
-        "collection_name": collection_name,
-        "status": str(info.status) if info.status is not None else None,
-        "points_count": info.points_count,
-        "vector_names": vector_names,
-        "payload_fields": payload_fields,
-    }
+def get_qdrant_service() -> QdrantService:
+    """Return the singleton QdrantService instance."""
+    return QdrantService()
 
 
 # ---------------------------------------------------------------------------
-# Обёртки BaseTool для агента
+# Tools
 # ---------------------------------------------------------------------------
 
 
@@ -161,24 +58,24 @@ class QdrantCollectionSchema(BaseTool):
     tool_name = "collection_schema"
     description = (
         "Вернуть имя коллекции, статус, число точек, имена векторов и поля payload "
-        "(тип данных). "
-        "Вызывай в первую очередь, чтобы узнать поля и векторы перед поиском и фильтрацией."
+        "(тип данных). Вызывай в первую очередь, чтобы узнать поля и векторы перед поиском."
     )
 
     reasoning: str = Field(description="Зачем сейчас нужна схема этой коллекции")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
 
-    async def __call__(self, context, config, **_) -> str:
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
-            result = build_collection_schema(self.collection)
+            qdrant_service = get_qdrant_service()
+            result = qdrant_service.get_collection_schema(self.collection)
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant collection_schema завершился ошибкой: %s", exc)
-            return _qdrant_failure_payload("collection_schema", exc)
+            return failure_payload("collection_schema", exc)
 
 
 class QdrantSearchTool(BaseTool):
-    """Семантический поиск по коллекции Qdrant (сходство векторов)."""
+    """Семантический поиск по коллекции Qdrant (векторное сходство)."""
 
     tool_name = "search"
     description = "Семантический поиск по коллекции Qdrant по текстовому запросу (векторное сходство)."
@@ -188,15 +85,14 @@ class QdrantSearchTool(BaseTool):
     query: str = Field(description="Поисковая фраза на естественном языке")
     vector_name: str = Field(
         default="embedding",
-        description=(
-            "Имя вектора для поиска (из поля vector_names из схемы коллекции)."
-        ),
+        description="Имя вектора для поиска (из схемы коллекции).",
     )
     limit: int = Field(default=5, description="Максимальное количество возвращаемых результатов")
 
-    async def __call__(self, context, config, **_) -> str:
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
-            result = search(
+            qdrant_service = get_qdrant_service()
+            result = qdrant_service.search(
                 collection=self.collection,
                 query=self.query,
                 vector_name=self.vector_name,
@@ -212,11 +108,11 @@ class QdrantSearchTool(BaseTool):
             return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant search завершился ошибкой: %s", exc)
-            return _qdrant_failure_payload("search", exc)
+            return failure_payload("search", exc)
 
 
 class QdrantFilterTool(BaseTool):
-    """Точное совпадение значения поля payload в коллекции Qdrant."""
+    """Отобрать точки коллекции по точному совпадению значения поля payload."""
 
     tool_name = "filter_points"
     description = "Отобрать точки коллекции по точному совпадению значения поля payload."
@@ -227,9 +123,10 @@ class QdrantFilterTool(BaseTool):
     value: str = Field(description="Ожидаемое точное значение поля")
     limit: int = Field(default=10, description="Максимальное количество возвращаемых результатов")
 
-    async def __call__(self, context, config, **_) -> str:
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
-            result = filter_points(
+            qdrant_service = get_qdrant_service()
+            result = qdrant_service.filter_points(
                 collection=self.collection,
                 field=self.field,
                 value=self.value,
@@ -245,7 +142,7 @@ class QdrantFilterTool(BaseTool):
             return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant filter_points завершился ошибкой: %s", exc)
-            return _qdrant_failure_payload("filter_points", exc)
+            return failure_payload("filter_points", exc)
 
 
 class QdrantScrollTool(BaseTool):
@@ -260,18 +157,11 @@ class QdrantScrollTool(BaseTool):
 
     reasoning: str = Field(description="Зачем нужен постраничный обход")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    limit: int = Field(default=10, description="Размер страницы (число точек)")
-    offset: Optional[str] = Field(
-        default=None,
-        description="Смещение для продолжения: значение next_offset из предыдущего вызова scroll",
-    )
+    limit: int = Field(default=10, description="Размер страницы")
+    offset: Optional[str] = Field(default=None, description="Смещение из предыдущего scroll")
     payload_fields: List[str] = Field(
         default=[],
-        description=(
-            "Вернуть только эти поля payload для каждой точки. "
-            "Пустой список — вернуть все поля. "
-            "Пример: [\"region\", \"age_group\"]"
-        ),
+        description="Список полей payload для возврата (пустой — все поля)",
     )
     filter_field: Optional[str] = Field(
         default=None,
@@ -279,12 +169,13 @@ class QdrantScrollTool(BaseTool):
     )
     filter_value: Optional[str] = Field(
         default=None,
-        description="Значение, которому должно равняться filter_field.",
+        description="Значение, которому должно равняться значение из поля filter_field.",
     )
 
-    async def __call__(self, context, config, **_) -> str:
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
-            result = scroll_points(
+            qdrant_service = get_qdrant_service()
+            result = qdrant_service.scroll_points(
                 collection=self.collection,
                 limit=self.limit,
                 offset=self.offset,
@@ -292,39 +183,38 @@ class QdrantScrollTool(BaseTool):
                 filter_field=self.filter_field,
                 filter_value=self.filter_value,
             )
+            points = result.get("points", []) if isinstance(result, dict) else []
             dto_name, dto_payload = register_dto(
                 context,
                 source=f"scroll_{self.collection}",
-                data=result.get("points", []),
+                data=points,
                 summary_text=f"Scroll {self.collection} (limit={self.limit})",
-                meta={
-                    "next_offset": result.get("next_offset"),
-                    "filter_field": self.filter_field,
-                    "filter_value": self.filter_value,
-                    "payload_fields": self.payload_fields,
-                },
+                meta={"limit": self.limit, "offset": self.offset},
             )
-            response = dto_summary_view(dto_name, dto_payload)
-            response["next_offset"] = result.get("next_offset")
-            return json.dumps(response, ensure_ascii=False, default=str)
+            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant scroll_points завершился ошибкой: %s", exc)
-            return _qdrant_failure_payload("scroll_points", exc)
+            return failure_payload("scroll_points", exc)
 
 
 class QdrantRetrieveTool(BaseTool):
     """Получить точки коллекции по списку идентификаторов (строки UUID)."""
 
     tool_name = "retrieve_by_id"
-    description = "Загрузить указанные точки из коллекции Qdrant по их идентификаторам (строки UUID)."
+    description = "Получить указанные точки из коллекции Qdrant по их идентификаторам (строки UUID)."
 
-    reasoning: str = Field(description="Зачем нужны именно эти точки")
+    reasoning: str = Field(description="Зачем нужно получить именно эти точки")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    ids: List[str] = Field(description="Список идентификаторов точек (UUID в виде строк) для загрузки")
+    ids: List[str] = Field(description="Список ID точек для извлечения (строки UUID)")
 
-    async def __call__(self, context, config, **_) -> str:
+    async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
-            result = retrieve_by_id(collection=self.collection, ids=self.ids)
+            qdrant_service = get_qdrant_service()
+
+            if not self.ids:
+                return json.dumps({"error": "ids_empty"}, ensure_ascii=False)
+
+            result = qdrant_service.retrieve_by_id(self.collection, self.ids)
             dto_name, dto_payload = register_dto(
                 context,
                 source=f"retrieve_{self.collection}",
@@ -335,4 +225,4 @@ class QdrantRetrieveTool(BaseTool):
             return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
         except Exception as exc:
             logger.warning("Qdrant retrieve_by_id завершился ошибкой: %s", exc)
-            return _qdrant_failure_payload("retrieve_by_id", exc)
+            return failure_payload("retrieve_by_id", exc)

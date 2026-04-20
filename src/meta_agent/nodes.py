@@ -4,18 +4,20 @@ import json
 import logging
 import time
 from typing import Any
+from langchain_core.runnables import RunnableConfig
 
 from langsmith import traceable
 
-from config import BIG_MODEL
 from src.meta_agent.agent_factory import run_agent
-from src.meta_agent.config import MAX_DELEGATED_ATTEMPTS, MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.config import BIG_MODEL, MAX_DELEGATED_ATTEMPTS, MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.utils.history import truncate_history
 from src.meta_agent.prompts import (
     ANALYZER_SYSTEM,
     CODE_WRITER_SYSTEM,
     EXTRACTOR_SYSTEM,
     SUPERVISOR_SYSTEM,
 )
+from src.meta_agent.utils.state import state_to_dict
 from src.meta_agent.tools.dto_tools import DTO_STORE_KEY
 from src.meta_agent.tools import (
     AnalyzerDecisionTool,
@@ -36,7 +38,6 @@ from src.meta_agent.tools import (
     SupervisorDecisionTool,
     ValidateCodeTool,
 )
-from src.meta_agent.utils import state_to_dict, truncate_history
 
 logger = logging.getLogger("meta_agent")
 
@@ -48,7 +49,7 @@ def _fallback_worker_payload(
     expected_tool: str,
     parse_error: Exception | None = None,
 ) -> str:
-    """Сформировать единообразный fallback-пейлоад для истории графа."""
+    """Формирует единообразный JSON-payload ошибки для истории графа при неудачном парсинге отчёта."""
     payload = {
         "status": "failed",
         "worker": worker,
@@ -66,22 +67,21 @@ def _fallback_worker_payload(
 
 
 def _extract_dto_store(custom_context: dict | None) -> dict:
-    """Extract and return a copy of dto_store from run_agent custom_context.
+    """Извлекает и возвращает копию dto_store из custom_context агента run_agent.
 
-    Ensures DTOs registered during agent execution (including on error paths)
-    are properly merged back into graph state. Always returns fresh dict to
-    prevent cross-node mutation.
+    Гарантирует, что все DTO, зарегистрированные во время выполнения (включая ошибки),
+    правильно попадают обратно в состояние графа. Всегда возвращает свежий словарь.
     """
     dto_store: dict = {}
     if isinstance(custom_context, dict):
         maybe_store = custom_context.get(DTO_STORE_KEY, {})
         if isinstance(maybe_store, dict):
-            dto_store = dict(maybe_store)  # copy for safety
+            dto_store = dict(maybe_store)  # копия для безопасности
     return dto_store
 
 
 @traceable(name="node.supervisor", run_type="chain")
-async def supervisor_node(state: dict | Any) -> dict:
+async def supervisor_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел супервайзера: анализирует историю, ставит следующую задачу,
     маршрутизирует к воркеру или завершает с итоговым ответом."""
     state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
@@ -131,9 +131,11 @@ async def supervisor_node(state: dict | Any) -> dict:
 
 
 @traceable(name="node.data_extractor", run_type="chain")
-async def data_extractor_node(state: dict | Any) -> dict:
+async def data_extractor_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел извлечения данных: самостоятельно выбирает Qdrant-инструменты
-    и запросы, затем отчитывается через DataExtractionReportTool."""
+    и запросы, затем отчитывается через DataExtractionReportTool.
+    QdrantService — singleton.
+    """
     state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
     task = (
         f"Задача от супервайзера: {state['current_task']}\n\n"
@@ -180,7 +182,7 @@ async def data_extractor_node(state: dict | Any) -> dict:
 
 
 @traceable(name="node.analyzer", run_type="chain")
-async def analyzer_node(state: dict | Any) -> dict:
+async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел аналитики: использует unified AnalyzerDecisionTool для выбора между
     report (выводы) и delegate (code_writer)
     """
@@ -271,7 +273,7 @@ async def analyzer_node(state: dict | Any) -> dict:
 
 
 @traceable(name="node.code_writer", run_type="chain")
-async def code_writer_node(state: dict | Any) -> dict:
+async def code_writer_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел code_writer: пишет, валидирует и запускает код с BIG_MODEL."""
     state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
     code_task = state.get("current_task", "").strip()
