@@ -20,6 +20,7 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
 # Пути и таймауты
 CHARTS_DIR: Path = PROJECT_ROOT / "charts"
+CHECKPOINT_DB_PATH: Path = PROJECT_ROOT / "data" / "meta_agent_checkpoints.sqlite3"
 CODE_TIMEOUT = 30
 
 # Модели LLM (BIG_MODEL используется для code_writer)

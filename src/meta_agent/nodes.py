@@ -9,8 +9,8 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from src.meta_agent.agent_factory import run_agent
-from src.meta_agent.config import BIG_MODEL, MAX_DELEGATED_ATTEMPTS, MAX_SUPERVISOR_ITERATIONS
-from src.meta_agent.utils.history import truncate_history
+from src.meta_agent.config import BIG_MODEL, MAX_DELEGATED_ATTEMPTS, MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.utils.history import build_role_history_text, truncate_history
 from src.meta_agent.prompts import (
     ANALYZER_SYSTEM,
     CODE_WRITER_SYSTEM,
@@ -116,7 +116,7 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
         return {
             "next_worker": "end",
             "answer": output,
-            "history": history + [{"role": "supervisor", "content": output}],
+            "history": [{"role": "supervisor", "content": output}],
             "iterations": iterations + 1,
         }
 
@@ -125,7 +125,7 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
         "next_worker": decision.next,
         "current_task": decision.task,
         "answer": decision.final_answer if decision.next == "end" else "",
-        "history": history + [{"role": "supervisor", "content": output}],
+        "history": [{"role": "supervisor", "content": output}],
         "iterations": iterations + 1,
     }
 
@@ -176,7 +176,7 @@ async def data_extractor_node(state: dict | Any, config: RunnableConfig | None =
         )
 
     return {
-        "history": state.get("history", []) + [{"role": "data_extractor", "content": content}],
+        "history": [{"role": "data_extractor", "content": content}],
         "dto_store": _extract_dto_store(run_result.context),
     }
 
@@ -187,10 +187,10 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
     report (выводы) и delegate (code_writer)
     """
     state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
-    prior_data = "\n\n".join(
-        f"[{message['role'].upper()}]: {message['content']}"
-        for message in state.get("history", [])
-        if message["role"] in ("data_extractor", "analyzer", "code_writer")
+    prior_data = build_role_history_text(
+        state.get("history", []),
+        roles=("data_extractor", "analyzer", "code_writer"),
+        max_chars=MAX_HISTORY_CHARS,
     )
     task = (
         f"Задача от супервайзера: {state['current_task']}\n\n"
@@ -230,7 +230,7 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
         )
         return {
             "next_worker": "supervisor",
-            "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+            "history": [{"role": "analyzer", "content": content}],
             "dto_store": _extract_dto_store(run_result.context),
             "delegated_attempts": delegated_attempts,
         }
@@ -240,7 +240,7 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
         content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {decision.conclusions}"
         return {
             "next_worker": "supervisor",
-            "history": state.get("history", []) + [{"role": "analyzer", "content": content}],
+            "history": [{"role": "analyzer", "content": content}],
             "dto_store": _extract_dto_store(run_result.context),
             "delegated_attempts": delegated_attempts,
         }
@@ -253,7 +253,7 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
         )
         return {
             "next_worker": "supervisor",
-            "history": state.get("history", []) + [{"role": "analyzer", "content": limit_content}],
+            "history": [{"role": "analyzer", "content": limit_content}],
             "dto_store": _extract_dto_store(run_result.context),
             "delegated_attempts": delegated_attempts,
         }
@@ -266,7 +266,7 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
     return {
         "next_worker": "code_writer",
         "current_task": decision.task,
-        "history": state.get("history", []) + [{"role": "analyzer", "content": decision_content}],
+        "history": [{"role": "analyzer", "content": decision_content}],
         "dto_store": _extract_dto_store(run_result.context),
         "delegated_attempts": delegated_attempts + 1,
     }
@@ -284,14 +284,14 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
         )
         return {
             "next_worker": "analyzer",
-            "history": state.get("history", []) + [{"role": "code_writer", "content": content}],
+            "history": [{"role": "code_writer", "content": content}],
             "dto_store": state.get("dto_store", {}),
         }
 
-    prior_data = "\n\n".join(
-        f"[{message['role'].upper()}]: {message['content']}"
-        for message in state.get("history", [])
-        if message["role"] in ("data_extractor", "analyzer", "code_writer")
+    prior_data = build_role_history_text(
+        state.get("history", []),
+        roles=("data_extractor", "analyzer", "code_writer"),
+        max_chars=MAX_HISTORY_CHARS,
     )
     task = (
         f"Задача от analyzer: {code_task}\n\n"
@@ -338,7 +338,7 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
 
     return {
         "next_worker": "analyzer",
-        "history": state.get("history", []) + [{"role": "code_writer", "content": content}],
+        "history": [{"role": "code_writer", "content": content}],
         "dto_store": _extract_dto_store(run_result.context),
         "current_task": code_task,
         "delegated_attempts": int(state.get("delegated_attempts", 0)),

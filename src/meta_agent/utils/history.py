@@ -85,14 +85,28 @@ def truncate_history_list(history: list, max_chars: int | None = None) -> list:
     return [trimmed_latest]
 
 
-def build_persisted_history(result: dict, question: str) -> list:
+def build_role_history_text(
+    history: list,
+    roles: tuple[str, ...],
+    max_chars: int | None = None,
+) -> str:
+    """Формирует ограниченный по размеру текст истории только для указанных ролей."""
+    if not history:
+        return ""
+
+    selected_roles = set(roles)
+    filtered_history = [dict(message) for message in history if message.get("role") in selected_roles]
+    if not filtered_history:
+        return ""
+
+    truncated = truncate_history_list(filtered_history, max_chars=max_chars)
+    return _history_as_text(truncated)
+
+
+def build_persisted_history(result: dict) -> list:
     """Формирует историю для сохранения после выполнения графа с обрезкой."""
     answer = result.get("answer", "")
     result_history = list(result.get("history", []))
-    result_history.extend(
-        [
-            {"role": "user", "content": question},
-            {"role": "assistant", "content": answer},
-        ]
-    )
+    if answer:
+        result_history.append({"role": "assistant", "content": answer})
     return truncate_history_list(result_history)

@@ -37,6 +37,8 @@ dependencies = [
     "transformers>=5.5.0",
     "uuid6>=2025.0.1",
     "uvicorn[standard]>=0.42.0",
+    "langgraph-checkpoint-sqlite>=3.0.3",
+    "aiosqlite>=0.22.1",
 ]
 
 [project.optional-dependencies]

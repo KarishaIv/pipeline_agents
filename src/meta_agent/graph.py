@@ -7,12 +7,15 @@
 import logging
 import time
 import uuid
+import asyncio
+from pathlib import Path
 from typing import Any, NamedTuple
 
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
+from src.meta_agent.config import CHECKPOINT_DB_PATH
 from src.meta_agent.nodes import analyzer_node, code_writer_node, data_extractor_node, supervisor_node
 from src.meta_agent.utils.state import MetaAgentState, build_turn_state_update
 from src.meta_agent.utils.history import (
@@ -32,12 +35,24 @@ class MetaAgentResult(NamedTuple):
 class MetaAgentGraphManager:
     """Объект-оркестратор выполнения графа и управления сессиями."""
 
-    def __init__(self) -> None:
-        self._checkpointer = InMemorySaver()
+    def __init__(self, checkpoint_db_path: Path | None = None) -> None:
+        self._checkpointer_cm = None
+        self._checkpointer: AsyncSqliteSaver | None = None
+        self._checkpoint_db_path = checkpoint_db_path or CHECKPOINT_DB_PATH
         self._graph = None
+        self._graph_lock = asyncio.Lock()
 
-    def _build_graph(self):
-        """Собрать и скомпилировать граф с checkpointer-ом в памяти.
+    async def _initialize_graph(self) -> None:
+        """Инициализирует checkpointer и граф один раз."""
+        self._checkpoint_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(self._checkpoint_db_path))
+        self._checkpointer = await self._checkpointer_cm.__aenter__()
+        await self._checkpointer.setup()
+
+        self._graph = self._build_graph(self._checkpointer)
+
+    def _build_graph(self, checkpointer: AsyncSqliteSaver):
+        """Собрать и скомпилировать граф с SQLite checkpointer-ом.
         Uses Pydantic MetaAgentState with LangGraph reducers for history and dto_store.
         """
         graph = StateGraph(MetaAgentState)
@@ -61,13 +76,25 @@ class MetaAgentGraphManager:
         graph.add_edge("data_extractor", "supervisor")
         graph.add_edge("code_writer", "analyzer")
 
-        return graph.compile(checkpointer=self._checkpointer)
+        return graph.compile(checkpointer=checkpointer)
 
-    def get_graph(self):
-        """Вернуть скомпилированный граф (ленивая инициализация)."""
+    async def get_graph(self):
+        """Вернуть скомпилированный граф (ленивая async-инициализация)."""
         if self._graph is None:
-            self._graph = self._build_graph()
+            async with self._graph_lock:
+                if self._graph is None:
+                    await self._initialize_graph()
         return self._graph
+
+    async def aclose(self) -> None:
+        """Явно освобождает ресурсы checkpointer-а и графа."""
+        async with self._graph_lock:
+            if self._checkpointer_cm is None:
+                return
+            await self._checkpointer_cm.__aexit__(None, None, None)
+            self._checkpointer_cm = None
+            self._checkpointer = None
+            self._graph = None
 
     def _resolve_session_thread_id(self, thread_id: str | None) -> str:
         """Разрешить thread_id для текущего запроса.
@@ -86,7 +113,7 @@ class MetaAgentGraphManager:
         Всегда валидирует snapshot в MetaAgentState для .model_dump().
         Редьюсеры (append_history, merge_dto_store) обрабатывают частичные обновления.
         """
-        graph = self.get_graph()
+        graph = await self.get_graph()
         runnable_config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
@@ -109,13 +136,13 @@ class MetaAgentGraphManager:
 
         Использует aupdate_state. Редьюсер history обрабатывает добавление.
         """
-        graph = self.get_graph()
+        graph = await self.get_graph()
         result_dict = result.model_dump() if hasattr(result, "model_dump") else result
         answer = result_dict.get("answer", "")
-        truncated_history = build_persisted_history(result_dict, question)
+        truncated_history = build_persisted_history(result_dict)
 
-        # Обновляем только history; остальные поля сохраняются из предыдущего состояния
-        await graph.aupdate_state(runnable_config, {"history": truncated_history})
+        # history имеет append-reducer, поэтому для финального усечения используем явную замену
+        await graph.aupdate_state(runnable_config, {"history": {"__replace__": truncated_history}})
         return answer
 
     @traceable(name="meta_agent.invoke_graph_session", run_type="chain")
@@ -127,7 +154,8 @@ class MetaAgentGraphManager:
         logger.info("Сессия %s — вопрос: %s", resolved_thread_id, question[:200])
         t0 = time.perf_counter()
 
-        result = await self.get_graph().ainvoke(state_update, runnable_config)
+        graph = await self.get_graph()
+        result = await graph.ainvoke(state_update, runnable_config)
         answer = await self._finalize_invoke(runnable_config, result, question)
 
         elapsed = time.perf_counter() - t0

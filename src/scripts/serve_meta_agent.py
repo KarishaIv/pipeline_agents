@@ -14,6 +14,7 @@ load_dotenv(override=True)
 
 import logging
 import warnings
+from contextlib import asynccontextmanager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +40,14 @@ from fastapi import FastAPI, Query
 
 from src.meta_agent import meta_graph_manager
 
-app = FastAPI(title="Meta Agent API")
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    yield
+    await meta_graph_manager.aclose()
+
+
+app = FastAPI(title="Meta Agent API", lifespan=app_lifespan)
 
 
 @app.get("/ask")

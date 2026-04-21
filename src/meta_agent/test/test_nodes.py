@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.meta_agent.config import MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.config import MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
 from src.meta_agent.nodes import (
     _extract_dto_store,
     _fallback_worker_payload,
@@ -108,6 +108,7 @@ async def test_data_extractor_node(mock_run_agent, meta_state, mocker):
     assert "dto_store" in result
     assert "history" in result
     assert "Data extracted" in result["history"][-1]["content"]
+    assert len(result["history"]) == 1
 
 
 @pytest.mark.asyncio
@@ -148,6 +149,37 @@ async def test_analyzer_node_report_vs_delegate(mock_run_agent, meta_state, mock
     state.delegated_attempts = 1
     result2 = await analyzer_node(state, MagicMock())
     assert result2.get("next_worker") == "code_writer"
+
+
+@pytest.mark.asyncio
+async def test_analyzer_node_truncates_large_prior_data(mock_run_agent, meta_state):
+    """Regression: analyzer task should not include unbounded prior worker history."""
+    mock_run_agent.return_value = MagicMock(
+        output=json.dumps(
+            {
+                "reasoning": "Enough signal for conclusions",
+                "decision": "report",
+                "key_findings": ["ok"],
+                "conclusions": "done",
+                "status": "completed",
+            }
+        ),
+        context={"dto_store": {}},
+    )
+
+    state = meta_state.model_copy()
+    state.current_task = "Analyze huge context"
+    state.history = [
+        {"role": "data_extractor", "content": f"chunk-{i}-" + ("x" * 3000)}
+        for i in range(12)
+    ]
+
+    await analyzer_node(state, MagicMock())
+
+    task_text = mock_run_agent.await_args.kwargs["task"]
+    assert "chunk-0-" not in task_text
+    assert "chunk-11-" in task_text
+    assert len(task_text) <= MAX_HISTORY_CHARS + 500
 
 
 @pytest.mark.asyncio

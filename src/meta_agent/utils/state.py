@@ -14,6 +14,12 @@ def append_history(left: list[dict], right: list[dict] | dict | None) -> list[di
     if right is None:
         return left
     if isinstance(right, dict):
+        
+        # Если в right есть ключ "__replace__" и значение этого ключа является списком,
+        # то возвращаем этот список вместо добавления нового сообщения
+        if "__replace__" in right and isinstance(right["__replace__"], list):
+            return right["__replace__"]
+
         right = [right]
     if isinstance(right, list):
         return (left or []) + right
@@ -69,7 +75,6 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
 
     Сбрасывает управляющие поля, сохраняет dto_store и добавляет вопрос в историю.
     """
-    existing_history = list(snapshot_values.get("history", []))
     dto_store = snapshot_values.get("dto_store", {})
 
     state_update = {
@@ -80,6 +85,7 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
         "current_task": "",
         "answer": "",
         "dto_store": dict(dto_store),
-        "history": existing_history + [{"role": "user", "content": question}],
+        # history использует append reducer: в update передаём только дельту текущего хода
+        "history": [{"role": "user", "content": question}],
     }
     return state_update

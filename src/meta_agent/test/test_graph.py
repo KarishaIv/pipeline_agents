@@ -1,11 +1,12 @@
 """Tests for graph.py - MetaAgentGraphManager, _build_graph, invoke methods, state management.
 
 Tests graph topology (nodes/edges), thread_id resolution, prepare/finalize invoke logic,
-integration with checkpointer and routing. Uses mock_memory_saver and meta_state.
+integration with checkpointer and routing.
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from src.meta_agent.graph import (
     MetaAgentGraphManager,
@@ -29,7 +30,8 @@ def test_resolve_session_thread_id():
     assert manager._resolve_session_thread_id("custom-thread-123") == "custom-thread-123"
 
 
-def test_build_graph_structure(mocker):
+@pytest.mark.asyncio
+async def test_build_graph_structure(mocker):
     """Test MetaAgentGraphManager builds correct graph topology with nodes and conditional edges."""
     mocker.patch("src.meta_agent.graph.route_supervisor", side_effect=route_supervisor)
     mocker.patch("src.meta_agent.graph.route_analyzer", side_effect=route_analyzer)
@@ -37,13 +39,32 @@ def test_build_graph_structure(mocker):
     mocker.patch("src.meta_agent.utils.routing.route_analyzer", side_effect=route_analyzer)
 
     manager = MetaAgentGraphManager()
-    graph = manager.get_graph()
+    graph = await manager.get_graph()
 
     assert hasattr(graph, "ainvoke")
 
 
 @pytest.mark.asyncio
-async def test_meta_agent_graph_manager_invoke(meta_state, mock_memory_saver, mocker):
+async def test_manager_uses_async_sqlite_checkpointer():
+    """Manager should initialize async SQLite checkpointer for async graph APIs."""
+    manager = MetaAgentGraphManager()
+    await manager.get_graph()
+    assert isinstance(manager._checkpointer, AsyncSqliteSaver)
+
+
+@pytest.mark.asyncio
+async def test_manager_uses_disk_sqlite_checkpointer(tmp_path):
+    """Manager should create SQLite checkpoint file on disk."""
+    db_path = tmp_path / "checkpoints.sqlite3"
+    manager = MetaAgentGraphManager(checkpoint_db_path=db_path)
+    await manager.get_graph()
+
+    assert db_path.exists()
+    await manager.aclose()
+
+
+@pytest.mark.asyncio
+async def test_meta_agent_graph_manager_invoke(meta_state, mocker):
     """Test MetaAgentGraphManager.invoke_graph_session and related methods."""
     manager = MetaAgentGraphManager()
 
@@ -115,6 +136,33 @@ async def test_prepare_invoke_builds_config_and_state_update():
 
 
 @pytest.mark.asyncio
+async def test_prepare_invoke_with_real_graph_supports_async_state_access():
+    """Regression: _prepare_invoke must not hit SqliteSaver async NotImplementedError."""
+    manager = MetaAgentGraphManager()
+
+    runnable_config, state_update = await manager._prepare_invoke("hello", "thread-async")
+
+    assert runnable_config["configurable"]["thread_id"] == "thread-async"
+    assert state_update["question"] == "hello"
+    assert state_update["history"][-1] == {"role": "user", "content": "hello"}
+
+
+@pytest.mark.asyncio
+async def test_aclose_releases_graph_resources():
+    """Manager should clear graph/checkpointer resources on explicit close."""
+    manager = MetaAgentGraphManager()
+    await manager.get_graph()
+
+    assert manager._graph is not None
+    assert manager._checkpointer is not None
+
+    await manager.aclose()
+
+    assert manager._graph is None
+    assert manager._checkpointer is None
+
+
+@pytest.mark.asyncio
 async def test_finalize_invoke_updates_history_and_returns_answer():
     """Test _finalize_invoke persists truncated history and returns answer."""
     manager = MetaAgentGraphManager()
@@ -131,7 +179,8 @@ async def test_finalize_invoke_updates_history_and_returns_answer():
     args, _ = graph.aupdate_state.await_args
     assert args[0] == runnable_config
     assert "history" in args[1]
-    assert args[1]["history"][-1]["content"] == "final answer"
+    replaced_history = args[1]["history"]["__replace__"]
+    assert replaced_history[-1]["content"] == "final answer"
 
 
 def test_graph_imports_and_tracing():

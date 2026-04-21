@@ -66,17 +66,14 @@ def test_truncate_history_and_list(history, expected_length, should_truncate):
 
 
 def test_build_persisted_history():
-    """Test build_persisted_history combines result and question with truncation."""
+    """Test build_persisted_history stores result history and assistant answer."""
     result = {
         "answer": "Test answer",
         "history": [{"role": "user", "content": "Previous"}],
     }
-    question = "New question"
-
-    persisted = build_persisted_history(result, question)
+    persisted = build_persisted_history(result)
     assert isinstance(persisted, list)
-    assert len(persisted) >= 2  # at least user + assistant
-    assert any("New question" in str(msg.get("content", "")) for msg in persisted)
+    assert len(persisted) >= 2  # existing history + assistant
     assert any("Test answer" in str(msg.get("content", "")) for msg in persisted)
 
 
@@ -115,7 +112,7 @@ def test_state_to_dict():
 
 
 def test_build_turn_state_update():
-    """Test build_turn_state_update resets control fields and appends to history."""
+    """Test build_turn_state_update resets control fields and returns history delta."""
     snapshot = {
         "history": [{"role": "user", "content": "old"}],
         "dto_store": {"existing": {"data": [1]}},
@@ -131,7 +128,7 @@ def test_build_turn_state_update():
     assert update["current_task"] == ""
     assert update["answer"] == ""
     assert "existing" in update["dto_store"]
-    assert len(update["history"]) == 2
+    assert len(update["history"]) == 1
     assert update["history"][-1]["content"] == question
 
 

@@ -3,11 +3,12 @@
 All tests are contained within src/meta_agent/test/ per the requirements.
 """
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from src.meta_agent.catalog import AVAILABLE_COLLECTIONS, COLLECTION_DESCRIPTIONS
 from src.meta_agent.utils.state import MetaAgentState
@@ -75,9 +76,15 @@ def mock_catalog(mocker):
 
 
 @pytest.fixture
-def mock_memory_saver():
-    """In-memory checkpointer for graph tests."""
-    return MemorySaver()
+def mock_sqlite_saver(tmp_path):
+    """SQLite checkpointer fixture for graph tests."""
+    conn = sqlite3.connect(tmp_path / "test-checkpoints.db", check_same_thread=False)
+    saver = SqliteSaver(conn)
+    saver.setup()
+    try:
+        yield saver
+    finally:
+        conn.close()
 
 
 # Common mock responses
