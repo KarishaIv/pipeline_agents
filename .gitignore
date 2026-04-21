@@ -8,6 +8,7 @@ __pycache__/
 .DS_Store
 .env
 .venv
+.coverage
 Basic PGM.ipynb
 
 # Virtual environment
