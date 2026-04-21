@@ -8,6 +8,8 @@ __pycache__/
 .DS_Store
 .env
 .venv
+.venv312/
+
 .coverage
 Basic PGM.ipynb
 
