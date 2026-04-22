@@ -172,7 +172,16 @@ async def test_finalize_invoke_updates_history_and_returns_answer():
 
     runnable_config = {"configurable": {"thread_id": "t-1"}}
     result = {"answer": "final answer", "history": [{"role": "supervisor", "content": "work"}]}
-    answer = await manager._finalize_invoke(runnable_config, result, "user question")
+    with patch(
+        "src.meta_agent.graph.build_persisted_history",
+        new=AsyncMock(
+            return_value=[
+                {"role": "history_summary", "content": "summary"},
+                {"role": "assistant", "content": "final answer"},
+            ]
+        ),
+    ):
+        answer = await manager._finalize_invoke(runnable_config, result, "user question")
 
     assert answer == "final answer"
     graph.aupdate_state.assert_awaited_once()
@@ -180,6 +189,7 @@ async def test_finalize_invoke_updates_history_and_returns_answer():
     assert args[0] == runnable_config
     assert "history" in args[1]
     replaced_history = args[1]["history"]["__replace__"]
+    assert replaced_history[0]["role"] == "history_summary"
     assert replaced_history[-1]["content"] == "final answer"
 
 

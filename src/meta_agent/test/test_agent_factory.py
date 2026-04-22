@@ -6,20 +6,31 @@ import pytest
 
 from src.meta_agent.agent_factory import (
     AgentRunResult,
-    _make_openai_client,
     _safe_get_custom_context,
     _unwrap,
     make_agent,
+    make_openai_client,
     run_agent,
 )
 
 
 def test_unwrap_function():
-    """Test _unwrap normalizes various agent outputs to string."""
+    """Test _unwrap normalizes various agent outputs to string.
+
+    None case now returns structured error JSON instead of raising,
+    to catch the common 'NoneType' subscriptable error from sgr_agent_core.
+    """
     assert _unwrap("direct string") == "direct string"
     assert _unwrap(SimpleNamespace(execution_result="from exec")) == "from exec"
     assert _unwrap(SimpleNamespace(answer="from answer")) == "from answer"
     assert _unwrap(123) == "123"  # fallback str()
+
+    # Test the None case that previously raised RuntimeError (now gracefully returns error JSON)
+    error_output = _unwrap(None)
+    assert isinstance(error_output, str)
+    assert "error" in error_output
+    assert "no tool_call selected" in error_output
+    assert "NoneType" in error_output or "tool_calls" in error_output
 
 
 def test_safe_get_custom_context():
@@ -54,7 +65,7 @@ def test_make_openai_client(mock_wrap, mock_asyncopenai, monkeypatch):
     monkeypatch.setenv("YANDEX_FOLDER_ID", "test-folder")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
 
-    client = _make_openai_client()
+    client = make_openai_client()
     assert mock_asyncopenai.called
     # Wrapping happens when tracing enabled
     assert mock_wrap.called
@@ -67,7 +78,7 @@ def test_make_openai_client_without_tracing(mock_wrap, mock_asyncopenai, monkeyp
     monkeypatch.setenv("YANDEX_API_KEY", "test-key")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "false")
 
-    _make_openai_client()
+    make_openai_client()
     assert mock_asyncopenai.called
     assert not mock_wrap.called
 
@@ -78,7 +89,7 @@ def test_make_agent_wires_config_and_initial_context(mocker):
     fake_agent = MagicMock()
     fake_agent._context = SimpleNamespace(custom_context={})
     tool_calling_agent = mocker.patch("src.meta_agent.agent_factory.ToolCallingAgent", return_value=fake_agent)
-    mocker.patch("src.meta_agent.agent_factory._make_openai_client", return_value=fake_client)
+    mocker.patch("src.meta_agent.agent_factory.make_openai_client", return_value=fake_client)
     mock_get_model = mocker.patch("src.meta_agent.agent_factory.get_model_uri", return_value="model://x")
 
     agent = make_agent(

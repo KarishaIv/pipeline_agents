@@ -4,7 +4,7 @@ Uses mock_run_agent fixture. Tests iteration limits, decision parsing, DTO extra
 fallback JSON, routing decisions, MAX_* constants enforcement.
 """
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -47,7 +47,10 @@ def test_extract_dto_store():
 @pytest.mark.asyncio
 async def test_supervisor_node(mock_run_agent, meta_state, mocker):
     """Test supervisor_node with decision parsing and iteration cap."""
-    mocker.patch("src.meta_agent.nodes.truncate_history")
+    mocker.patch(
+        "src.meta_agent.nodes.summarize_history_text",
+        new=AsyncMock(return_value="compressed history"),
+    )
     mock_run_agent.return_value = MagicMock(
         output=json.dumps(
             {
@@ -73,7 +76,10 @@ async def test_supervisor_node(mock_run_agent, meta_state, mocker):
 @pytest.mark.asyncio
 async def test_supervisor_node_max_iterations(meta_state, mocker):
     """Test MAX_SUPERVISOR_ITERATIONS enforcement leads to final answer."""
-    mocker.patch("src.meta_agent.nodes.truncate_history")
+    mocker.patch(
+        "src.meta_agent.nodes.summarize_history_text",
+        new=AsyncMock(return_value="compressed history"),
+    )
     state = meta_state.model_copy()
     state.iterations = MAX_SUPERVISOR_ITERATIONS + 1
 
@@ -153,7 +159,7 @@ async def test_analyzer_node_report_vs_delegate(mock_run_agent, meta_state, mock
 
 @pytest.mark.asyncio
 async def test_analyzer_node_truncates_large_prior_data(mock_run_agent, meta_state):
-    """Regression: analyzer task should not include unbounded prior worker history."""
+    """Regression: analyzer task should use summary for large prior worker history."""
     mock_run_agent.return_value = MagicMock(
         output=json.dumps(
             {
@@ -174,11 +180,14 @@ async def test_analyzer_node_truncates_large_prior_data(mock_run_agent, meta_sta
         for i in range(12)
     ]
 
-    await analyzer_node(state, MagicMock())
+    with patch(
+        "src.meta_agent.nodes.build_role_history_text_async",
+        new=AsyncMock(return_value="[HISTORY_SUMMARY]: compressed history"),
+    ):
+        await analyzer_node(state, MagicMock())
 
     task_text = mock_run_agent.await_args.kwargs["task"]
-    assert "chunk-0-" not in task_text
-    assert "chunk-11-" in task_text
+    assert "[HISTORY_SUMMARY]:" in task_text
     assert len(task_text) <= MAX_HISTORY_CHARS + 500
 
 

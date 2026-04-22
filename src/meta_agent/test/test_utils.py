@@ -4,13 +4,17 @@ All test logic is contained within src/meta_agent/test/ as specified.
 Tests cover pure functions with parametrized edge cases, reducers, truncation logic.
 """
 import json
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.meta_agent.config import MAX_HISTORY_CHARS
 from src.meta_agent.utils.history import (
+    _default_history_summarizer,
     build_persisted_history,
+    build_role_history_text_async,
+    summarize_history_list,
     truncate_history,
     truncate_history_list,
     truncate_output_value,
@@ -65,16 +69,98 @@ def test_truncate_history_and_list(history, expected_length, should_truncate):
         assert "…" in text_result or "история обрезана" in text_result
 
 
-def test_build_persisted_history():
+@pytest.mark.asyncio
+async def test_build_persisted_history():
     """Test build_persisted_history stores result history and assistant answer."""
     result = {
         "answer": "Test answer",
         "history": [{"role": "user", "content": "Previous"}],
     }
-    persisted = build_persisted_history(result)
+    persisted = await build_persisted_history(result)
     assert isinstance(persisted, list)
     assert len(persisted) >= 2  # existing history + assistant
     assert any("Test answer" in str(msg.get("content", "")) for msg in persisted)
+
+
+@pytest.mark.asyncio
+async def test_summarize_history_list_uses_llm_for_long_history():
+    """Long history should be compressed with LLM summary instead of dropping old messages."""
+    history = [{"role": "user", "content": f"message-{i}-" + ("x" * 3000)} for i in range(8)]
+
+    async def fake_summarizer(_: str) -> str:
+        return "Краткое резюме предыдущих шагов"
+
+    summarized = await summarize_history_list(history, summarizer=fake_summarizer)
+    assert summarized[0]["role"] == "history_summary"
+    assert "Краткое резюме" in summarized[0]["content"]
+    assert any("message-7-" in item["content"] for item in summarized)
+
+
+@pytest.mark.asyncio
+async def test_summarize_history_list_fallbacks_to_truncation_on_empty_summary():
+    """If LLM summary is empty, code should keep deterministic truncation fallback."""
+    history = [{"role": "user", "content": f"message-{i}-" + ("x" * 3000)} for i in range(8)]
+
+    async def empty_summarizer(_: str) -> str:
+        return "   "
+
+    summarized = await summarize_history_list(history, summarizer=empty_summarizer)
+    assert summarized
+    assert summarized[0]["role"] != "history_summary"
+
+
+@pytest.mark.asyncio
+async def test_build_role_history_text_async_uses_summary_when_history_is_large():
+    """Role-specific history text should include generated summary marker for oversized context."""
+    history = [{"role": "data_extractor", "content": "x" * (MAX_HISTORY_CHARS // 2)} for _ in range(3)]
+
+    async def fake_summarizer(_: str) -> str:
+        return "Краткое резюме истории"
+
+    text = await build_role_history_text_async(
+        history,
+        roles=("data_extractor",),
+        summarizer=fake_summarizer,
+    )
+    assert "[HISTORY_SUMMARY]:" in text
+    assert "Краткое резюме истории" in text
+
+
+@pytest.mark.asyncio
+async def test_build_role_history_text_async_keeps_existing_history_summary():
+    """Existing history_summary entries should not be filtered out by role selection."""
+    history = [
+        {"role": "history_summary", "content": "already summarized context"},
+        {"role": "data_extractor", "content": "fresh worker result"},
+        {"role": "user", "content": "must be filtered"},
+    ]
+
+    text = await build_role_history_text_async(history, roles=("data_extractor",))
+    assert "[HISTORY_SUMMARY]: already summarized context" in text
+    assert "[DATA_EXTRACTOR]: fresh worker result" in text
+    assert "[USER]:" not in text
+
+
+@pytest.mark.asyncio
+async def test_default_history_summarizer_passes_max_tokens_to_llm(mocker, monkeypatch):
+    """Default summarizer should propagate max_tokens into chat completion request."""
+    monkeypatch.setenv("YANDEX_API_KEY", "test-key")
+    monkeypatch.setenv("YANDEX_FOLDER_ID", "test-folder")
+
+    create_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="summary text"))]
+        )
+    )
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create_mock))
+    )
+
+    mocker.patch("src.meta_agent.utils.history.make_openai_client", return_value=fake_client)
+
+    out = await _default_history_summarizer("history body", max_tokens=321)
+    assert out == "summary text"
+    assert create_mock.await_args.kwargs["max_tokens"] == 321
 
 
 def test_append_history_reducer():

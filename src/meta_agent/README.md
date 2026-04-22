@@ -216,6 +216,6 @@ uv run pytest src/meta_agent/test/tools/ -q
 - **Coverage target**: >80% for utils, tools, nodes, graph.
 - Uses `pytest`, `pytest-asyncio`, `pytest-mock`.
 - Heavy mocking of LLM (`run_agent`), QdrantService, pandas/matplotlib, OpenAI client.
-- Tests cover pure functions (history truncation, state reducers, routing), all tools (DTO, Qdrant, analyzer, code execution sandbox, decision tools), nodes, graph construction/topology, and config/prompts/catalog.
+- Tests cover pure functions (history summarization/compression, state reducers, routing), all tools (DTO, Qdrant, analyzer, code execution sandbox, decision tools), nodes, graph construction/topology, and config/prompts/catalog.
 - Fixtures in `conftest.py` provide `meta_state`, `mock_qdrant_service`, `mock_run_agent`, `temp_charts_dir`, etc.
 - No live LLM or Qdrant calls in unit tests.

@@ -10,33 +10,15 @@ from langsmith import traceable
 
 from src.meta_agent.agent_factory import run_agent
 from src.meta_agent.config import BIG_MODEL, MAX_DELEGATED_ATTEMPTS, MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
-from src.meta_agent.utils.history import build_role_history_text, truncate_history
-from src.meta_agent.prompts import (
-    ANALYZER_SYSTEM,
-    CODE_WRITER_SYSTEM,
-    EXTRACTOR_SYSTEM,
-    SUPERVISOR_SYSTEM,
-)
+from src.meta_agent.utils.history import build_role_history_text_async, summarize_history_text
 from src.meta_agent.utils.state import state_to_dict
+from src.meta_agent.workers import _get_worker_config
 from src.meta_agent.tools.dto_tools import DTO_STORE_KEY
 from src.meta_agent.tools import (
     AnalyzerDecisionTool,
     CodeExecutionReportTool,
-    ComputeStatsTool,
-    CreateChartTool,
     DataExtractionReportTool,
-    ExecuteCodeTool,
-    ListDtoNamesTool,
-    QdrantCollectionSchema,
-    QdrantFilterTool,
-    QdrantRetrieveTool,
-    QdrantScrollTool,
-    QdrantSearchTool,
-    RemainingStepsTool,
-    SampleDtoTool,
-    SummarizeTextsTool,
     SupervisorDecisionTool,
-    ValidateCodeTool,
 )
 
 logger = logging.getLogger("meta_agent")
@@ -80,11 +62,127 @@ def _extract_dto_store(custom_context: dict | None) -> dict:
     return dto_store
 
 
+def _process_analyzer_decision(
+    decision: Any,
+    delegated_attempts: int,
+    run_result_context: Any | None,
+) -> dict:
+    """Обрабатывает решение AnalyzerDecisionTool (report vs delegate с проверкой лимита).
+    Выделяет сложную логику ветвления из analyzer_node.
+    """
+    dto_store = _extract_dto_store(run_result_context)
+
+    if decision.decision == "report":
+        findings_text = "\n".join(f"- {item}" for item in decision.key_findings)
+        content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {decision.conclusions}"
+        return {
+            "next_worker": "supervisor",
+            "history": [{"role": "analyzer", "content": content}],
+            "dto_store": dto_store,
+            "delegated_attempts": delegated_attempts,
+        }
+
+    # delegate to code_writer
+    if delegated_attempts >= MAX_DELEGATED_ATTEMPTS:
+        limit_content = (
+            f"[ЛИМИТ ДЕЛЕГИРОВАНИЯ] Достигнут лимит переходов analyzer -> code_writer: "
+            f"{MAX_DELEGATED_ATTEMPTS}. Продолжаю без новых делегаций."
+        )
+        return {
+            "next_worker": "supervisor",
+            "history": [{"role": "analyzer", "content": limit_content}],
+            "dto_store": dto_store,
+            "delegated_attempts": delegated_attempts,
+        }
+
+    decision_content = (
+        "Решение аналитика: code_writer.\n"
+        f"Причина: {decision.delegate_reason or decision.reasoning}\n"
+        f"Задача: {decision.task}"
+    )
+    return {
+        "next_worker": "code_writer",
+        "current_task": decision.task,
+        "history": [{"role": "analyzer", "content": decision_content}],
+        "dto_store": dto_store,
+        "delegated_attempts": delegated_attempts + 1,
+    }
+
+
+
+async def _get_prior_worker_history(state: dict | Any) -> str:
+    """Shared history builder for analyzer/code_writer. Uses role filter + summarization."""
+    state_dict = state_to_dict(state)
+    return await build_role_history_text_async(
+        state_dict.get("history", []),
+        roles=("data_extractor", "analyzer", "code_writer"),
+        max_chars=MAX_HISTORY_CHARS,
+    )
+
+
+async def _run_worker(
+    state: dict | Any,
+    worker_name: str,
+    task: str,
+    model: str | None = None,
+) -> Any:
+    """Core helper: runs the inner ToolCallingAgent with timing, logging, and DTO context.
+    """
+    state_dict = state_to_dict(state)
+    config = _get_worker_config(worker_name)
+    dto_store = state_dict.get("dto_store", {})
+
+    # Use config default_model unless explicitly overridden (for code_writer)
+    effective_model = model or config.default_model
+
+    t0 = time.perf_counter()
+    run_result = await run_agent(
+        task=task,
+        system_prompt=config.system_prompt,
+        toolkit=config.tools,
+        name=worker_name,
+        model=effective_model,
+        initial_custom_context={DTO_STORE_KEY: dict(dto_store)},
+    )
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "%s завершён за %.1fс", worker_name.replace("_", " ").title(), elapsed
+    )
+    return run_result
+
+
+def _safe_parse_output(
+    output: str,
+    tool_model: type,
+    worker: str,
+) -> tuple[Any | None, str | None]:
+    """Parse output to Pydantic model or generate fallback JSON payload for history.
+    """
+    try:
+        parsed = tool_model.model_validate_json(output)
+        return parsed, None
+    except Exception as exc:
+        logger.warning(
+            "Не удалось распарсить %s для %s: %s", tool_model.__name__, worker, exc
+        )
+        content = _fallback_worker_payload(
+            worker=worker,
+            raw_output=output,
+            expected_tool=getattr(tool_model, "tool_name", tool_model.__name__),
+            parse_error=exc,
+        )
+        return None, content
+
+
+# === Nodes ===
+
+
 @traceable(name="node.supervisor", run_type="chain")
 async def supervisor_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел супервайзера: анализирует историю, ставит следующую задачу,
-    маршрутизирует к воркеру или завершает с итоговым ответом."""
-    state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
+    маршрутизирует к воркеру или завершает с итоговым ответом.
+    """
+    state = state_to_dict(state)
     iterations = state.get("iterations", 0)
     history: list = state.get("history", [])
 
@@ -93,21 +191,13 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
         last = history[-1]["content"] if history else "Недостаточно данных для ответа."
         return {"next_worker": "end", "answer": last, "iterations": iterations + 1}
 
-    history_text = truncate_history(history)
-    task = f"Вопрос пользователя: {state['question']}"
+    history_text = await summarize_history_text(history)
+    task = f"Вопрос пользователя: {state.get('question', '')}"
     if history_text:
         task += f"\n\nИстория работы:\n{history_text}"
 
-    t0 = time.perf_counter()
-    run_result = await run_agent(
-        task=task,
-        system_prompt=SUPERVISOR_SYSTEM,
-        toolkit=[RemainingStepsTool, SupervisorDecisionTool],
-        name="supervisor",
-    )
+    run_result = await _run_worker(state, "supervisor", task)
     output = run_result.output
-    elapsed = time.perf_counter() - t0
-    logger.info("Итерация супервайзера %d завершена за %.1fс", iterations + 1, elapsed)
 
     try:
         decision = SupervisorDecisionTool.model_validate_json(output)
@@ -120,7 +210,7 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
             "iterations": iterations + 1,
         }
 
-    logger.info("Решение супервайзера: next=%s task=%s", decision.next, decision.task[:120])
+    logger.info("Решение супервайзера: next=%s task=%s", decision.next, (decision.task or "")[:120])
     return {
         "next_worker": decision.next,
         "current_task": decision.task,
@@ -134,46 +224,23 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
 async def data_extractor_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел извлечения данных: самостоятельно выбирает Qdrant-инструменты
     и запросы, затем отчитывается через DataExtractionReportTool.
-    QdrantService — singleton.
     """
-    state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
+    state = state_to_dict(state)
     task = (
-        f"Задача от супервайзера: {state['current_task']}\n\n"
-        f"Контекст — исходный вопрос пользователя: {state['question']}"
+        f"Задача от супервайзера: {state.get('current_task', '')}\n\n"
+        f"Контекст — исходный вопрос пользователя: {state.get('question', '')}"
     )
 
-    t0 = time.perf_counter()
-    run_result = await run_agent(
-        task=task,
-        system_prompt=EXTRACTOR_SYSTEM,
-        toolkit=[
-            QdrantCollectionSchema,
-            QdrantSearchTool,
-            QdrantFilterTool,
-            QdrantScrollTool,
-            QdrantRetrieveTool,
-            ListDtoNamesTool,
-            RemainingStepsTool,
-            SampleDtoTool,
-            DataExtractionReportTool,
-        ],
-        name="data_extractor",
-        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
-    )
+    run_result = await _run_worker(state, "data_extractor", task)
     output = run_result.output
-    logger.info("Извлечение данных завершено за %.1fс", time.perf_counter() - t0)
 
-    try:
-        report = DataExtractionReportTool.model_validate_json(output)
-        content = f"Кратко: {report.summary}\n\nДанные: {report.dto_references}"
-    except Exception as exc:
-        logger.warning("Fallback data_extractor: не удалось распарсить DataExtractionReportTool: %s", exc)
-        content = _fallback_worker_payload(
-            worker="data_extractor",
-            raw_output=output,
-            expected_tool=DataExtractionReportTool.tool_name,
-            parse_error=exc,
-        )
+    parsed, fallback_content = _safe_parse_output(
+        output, DataExtractionReportTool, "data_extractor"
+    )
+    if parsed is None:
+        content = fallback_content or output
+    else:
+        content = f"Кратко: {parsed.summary}\n\nДанные: {parsed.dto_references}"
 
     return {
         "history": [{"role": "data_extractor", "content": content}],
@@ -184,98 +251,42 @@ async def data_extractor_node(state: dict | Any, config: RunnableConfig | None =
 @traceable(name="node.analyzer", run_type="chain")
 async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел аналитики: использует unified AnalyzerDecisionTool для выбора между
-    report (выводы) и delegate (code_writer)
+    report (выводы) и delegate (code_writer). Сложная логика ветвления
+    вынесена в _process_analyzer_decision.
     """
-    state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
-    prior_data = build_role_history_text(
-        state.get("history", []),
-        roles=("data_extractor", "analyzer", "code_writer"),
-        max_chars=MAX_HISTORY_CHARS,
-    )
+    state = state_to_dict(state)
+    prior_data = await _get_prior_worker_history(state)
     task = (
-        f"Задача от супервайзера: {state['current_task']}\n\n"
-        f"Исходный вопрос: {state['question']}\n\n"
+        f"Задача от супервайзера: {state.get('current_task', '')}\n\n"
+        f"Исходный вопрос: {state.get('question', '')}\n\n"
         f"Собранные данные:\n{prior_data}"
     )
     delegated_attempts = int(state.get("delegated_attempts", 0))
 
-    t0 = time.perf_counter()
-    run_result = await run_agent(
-        task=task,
-        system_prompt=ANALYZER_SYSTEM,
-        toolkit=[
-            ListDtoNamesTool,
-            RemainingStepsTool,
-            SampleDtoTool,
-            SummarizeTextsTool,
-            ComputeStatsTool,
-            CreateChartTool,
-            AnalyzerDecisionTool,
-        ],
-        name="analyzer",
-        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
-    )
+    run_result = await _run_worker(state, "analyzer", task)
     output = run_result.output
-    logger.info("Аналитика завершена за %.1fс", time.perf_counter() - t0)
 
-    try:
-        decision = AnalyzerDecisionTool.model_validate_json(output)
-    except Exception as exc:
-        logger.warning("Не удалось распарсить AnalyzerDecisionTool: %s", exc)
-        content = _fallback_worker_payload(
-            worker="analyzer",
-            raw_output=output,
-            expected_tool=AnalyzerDecisionTool.tool_name,
-            parse_error=exc,
-        )
-        return {
-            "next_worker": "supervisor",
-            "history": [{"role": "analyzer", "content": content}],
-            "dto_store": _extract_dto_store(run_result.context),
-            "delegated_attempts": delegated_attempts,
-        }
-
-    if decision.decision == "report":
-        findings_text = "\n".join(f"- {item}" for item in decision.key_findings)
-        content = f"Ключевые выводы:\n{findings_text}\n\nЗаключения: {decision.conclusions}"
-        return {
-            "next_worker": "supervisor",
-            "history": [{"role": "analyzer", "content": content}],
-            "dto_store": _extract_dto_store(run_result.context),
-            "delegated_attempts": delegated_attempts,
-        }
-
-    # delegate to code_writer
-    if delegated_attempts >= MAX_DELEGATED_ATTEMPTS:
-        limit_content = (
-            f"[ЛИМИТ ДЕЛЕГИРОВАНИЯ] Достигнут лимит переходов analyzer -> code_writer: "
-            f"{MAX_DELEGATED_ATTEMPTS}. Продолжаю без новых делегаций."
-        )
-        return {
-            "next_worker": "supervisor",
-            "history": [{"role": "analyzer", "content": limit_content}],
-            "dto_store": _extract_dto_store(run_result.context),
-            "delegated_attempts": delegated_attempts,
-        }
-
-    decision_content = (
-        "Решение аналитика: code_writer.\n"
-        f"Причина: {decision.delegate_reason or decision.reasoning}\n"
-        f"Задача: {decision.task}"
+    parsed, fallback_content = _safe_parse_output(
+        output, AnalyzerDecisionTool, "analyzer"
     )
-    return {
-        "next_worker": "code_writer",
-        "current_task": decision.task,
-        "history": [{"role": "analyzer", "content": decision_content}],
-        "dto_store": _extract_dto_store(run_result.context),
-        "delegated_attempts": delegated_attempts + 1,
-    }
+    if parsed is None:
+        content = fallback_content or output
+        return {
+            "next_worker": "supervisor",
+            "history": [{"role": "analyzer", "content": content}],
+            "dto_store": _extract_dto_store(run_result.context),
+            "delegated_attempts": delegated_attempts,
+        }
+
+    return _process_analyzer_decision(
+        parsed, delegated_attempts, run_result.context
+    )
 
 
 @traceable(name="node.code_writer", run_type="chain")
 async def code_writer_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
     """Узел code_writer: пишет, валидирует и запускает код с BIG_MODEL."""
-    state = state_to_dict(state)  # support Pydantic state from LangGraph reducers
+    state = state_to_dict(state)
     code_task = state.get("current_task", "").strip()
     if not code_task:
         content = (
@@ -288,52 +299,28 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
             "dto_store": state.get("dto_store", {}),
         }
 
-    prior_data = build_role_history_text(
-        state.get("history", []),
-        roles=("data_extractor", "analyzer", "code_writer"),
-        max_chars=MAX_HISTORY_CHARS,
-    )
+    prior_data = await _get_prior_worker_history(state)
     task = (
         f"Задача от analyzer: {code_task}\n\n"
-        f"Исходный вопрос: {state['question']}\n\n"
+        f"Исходный вопрос: {state.get('question', '')}\n\n"
         f"Контекст предыдущих шагов:\n{prior_data}"
     )
 
-    t0 = time.perf_counter()
-    run_result = await run_agent(
-        task=task,
-        system_prompt=CODE_WRITER_SYSTEM,
-        toolkit=[
-            ListDtoNamesTool,
-            RemainingStepsTool,
-            SampleDtoTool,
-            ValidateCodeTool,
-            ExecuteCodeTool,
-            CodeExecutionReportTool,
-        ],
-        name="code_writer",
-        model=BIG_MODEL,
-        initial_custom_context={DTO_STORE_KEY: state.get("dto_store", {})},
-    )
+    run_result = await _run_worker(state, "code_writer", task, model=BIG_MODEL)
     output = run_result.output
-    logger.info("Code_writer завершён за %.1fс", time.perf_counter() - t0)
 
-    try:
-        report = CodeExecutionReportTool.model_validate_json(output)
-        findings_text = "\n".join(f"- {item}" for item in report.findings)
+    parsed, fallback_content = _safe_parse_output(
+        output, CodeExecutionReportTool, "code_writer"
+    )
+    if parsed is None:
+        content = fallback_content or output
+    else:
+        findings_text = "\n".join(f"- {item}" for item in parsed.findings)
         content = (
-            f"Задача: {report.task}\n"
+            f"Задача: {parsed.task}\n"
             f"Найдено:\n{findings_text}\n\n"
-            f"Валидация: {report.validation}\n"
-            f"Выполнение: {report.execution}"
-        )
-    except Exception as exc:
-        logger.warning("Fallback code_writer: не удалось распарсить CodeExecutionReportTool: %s", exc)
-        content = _fallback_worker_payload(
-            worker="code_writer",
-            raw_output=output,
-            expected_tool=CodeExecutionReportTool.tool_name,
-            parse_error=exc,
+            f"Валидация: {parsed.validation}\n"
+            f"Выполнение: {parsed.execution}"
         )
 
     return {

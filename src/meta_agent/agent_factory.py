@@ -39,9 +39,9 @@ def _safe_get_custom_context(agent: Any | None) -> dict[str, Any] | None:
     return None
 
 
-def _make_openai_client() -> AsyncOpenAI:
+def make_openai_client(api_key: str | None = None) -> AsyncOpenAI:
     """Создать AsyncOpenAI-клиент и, при включённом tracing, обернуть его для LangSmith."""
-    api_key = os.getenv("YANDEX_API_KEY", "")
+    api_key = api_key if api_key is not None else os.getenv("YANDEX_API_KEY", "")
     client = AsyncOpenAI(api_key=api_key, base_url=YANDEX_BASE_URL)
     if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
         client = wrap_openai(client)
@@ -71,7 +71,7 @@ def make_agent(
 
     agent = ToolCallingAgent(
         task_messages=[{"role": "user", "content": task}],
-        openai_client=_make_openai_client(),
+        openai_client=make_openai_client(api_key=api_key),
         agent_config=cfg,
         toolkit=toolkit,
         def_name=name,
@@ -83,7 +83,23 @@ def make_agent(
 
 def _unwrap(result: Any) -> str:
     """Извлекает ответ из результата агента.
+
+    Если result is None (происходит при внутренних ошибках ToolCallingAgent,
+    например, когда completion.choices[0].message.tool_calls is None —
+    часто 'NoneType' object is not subscriptable), возвращает JSON с ошибкой.
+    Это предотвращает traceback в логах для ожидаемого случая отказа модели
+    от вызова инструмента.
     """
+    if result is None:
+        error_msg = (
+            "Agent returned None (likely no tool_call selected or "
+            "model failed to produce valid tool call response). "
+            "This is often caused by completion.choices[0].message.tool_calls being None. "
+            "See sgr_agent_core logs for TypeError details. "
+            "Nodes will fallback via _safe_parse_output."
+        )
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+
     if isinstance(result, str):
         return result
     if hasattr(result, "execution_result"):

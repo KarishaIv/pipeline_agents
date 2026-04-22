@@ -139,10 +139,10 @@ class MetaAgentGraphManager:
         graph = await self.get_graph()
         result_dict = result.model_dump() if hasattr(result, "model_dump") else result
         answer = result_dict.get("answer", "")
-        truncated_history = build_persisted_history(result_dict)
+        summarized_history = await build_persisted_history(result_dict)
 
         # history имеет append-reducer, поэтому для финального усечения используем явную замену
-        await graph.aupdate_state(runnable_config, {"history": {"__replace__": truncated_history}})
+        await graph.aupdate_state(runnable_config, {"history": {"__replace__": summarized_history}})
         return answer
 
     @traceable(name="meta_agent.invoke_graph_session", run_type="chain")

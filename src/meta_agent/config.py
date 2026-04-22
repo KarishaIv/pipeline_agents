@@ -11,8 +11,10 @@ from config import PROJECT_ROOT
 # Лимиты итераций
 MAX_SUPERVISOR_ITERATIONS = 10
 MAX_AGENT_ITERATIONS = 20
-MAX_HISTORY_CHARS = 12_000
+MAX_HISTORY_CHARS = 10_000
 MAX_DELEGATED_ATTEMPTS = 6
+SUMMARY_RECENT_MESSAGES = 5
+HISTORY_SUMMARY_MAX_TOKENS = 3000
 
 # Конфигурация Qdrant (переопределяется через env)
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
@@ -26,3 +28,4 @@ CODE_TIMEOUT = 30
 # Модели LLM (BIG_MODEL используется для code_writer)
 LLM_MODEL = "aliceai-llm"
 BIG_MODEL = "aliceai-llm"
+HISTORY_SUMMARY_MODEL = "aliceai-llm"
