@@ -83,20 +83,11 @@ def make_agent(
 
 def _unwrap(result: Any) -> str:
     """Извлекает ответ из результата агента.
-
-    Если result is None (происходит при внутренних ошибках ToolCallingAgent,
-    например, когда completion.choices[0].message.tool_calls is None —
-    часто 'NoneType' object is not subscriptable), возвращает JSON с ошибкой.
-    Это предотвращает traceback в логах для ожидаемого случая отказа модели
-    от вызова инструмента.
     """
     if result is None:
         error_msg = (
             "Agent returned None (likely no tool_call selected or "
             "model failed to produce valid tool call response). "
-            "This is often caused by completion.choices[0].message.tool_calls being None. "
-            "See sgr_agent_core logs for TypeError details. "
-            "Nodes will fallback via _safe_parse_output."
         )
         return json.dumps({"error": error_msg}, ensure_ascii=False)
 

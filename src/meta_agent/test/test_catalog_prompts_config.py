@@ -86,7 +86,7 @@ def test_config_constants():
     """Test default config values from meta_agent/config.py."""
     assert MAX_SUPERVISOR_ITERATIONS == 10
     assert MAX_AGENT_ITERATIONS == 20
-    assert MAX_HISTORY_CHARS == 12_000
+    assert MAX_HISTORY_CHARS == 10_000
     assert MAX_DELEGATED_ATTEMPTS == 6
     assert CODE_TIMEOUT == 30
     assert LLM_MODEL == "aliceai-llm"

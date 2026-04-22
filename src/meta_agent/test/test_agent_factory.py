@@ -30,7 +30,7 @@ def test_unwrap_function():
     assert isinstance(error_output, str)
     assert "error" in error_output
     assert "no tool_call selected" in error_output
-    assert "NoneType" in error_output or "tool_calls" in error_output
+    assert "None" in error_output or "tool_call" in error_output
 
 
 def test_safe_get_custom_context():
