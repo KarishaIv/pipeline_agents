@@ -15,3 +15,6 @@ outputs/
 data/benchmark/
 data/benchmark_external/
 pipeline.log
+
+/multi_agent_rag/
+/context_*.json

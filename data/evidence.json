@@ -1,7 +1,7 @@
 [
   {
     "target_audience_name": "fathers",
-    "synthetic_size": 5,
+    "synthetic_size": 500,
     "age_group": 40,
     "gender": "Мужской",
     "children_group": 1,
@@ -9,7 +9,7 @@
   },
   {
     "target_audience_name": "mothers",
-    "synthetic_size": 4,
+    "synthetic_size": 500,
     "age_group": 30,
     "gender": "Женский",
     "children_group": 1,

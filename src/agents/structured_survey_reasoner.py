@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import LLM_MODEL
+from src.agents.survey_news_adapter import SurveyNewsAdapter
 from src.agents.survey_persona_adapter import SurveyPersonaAdapter
 from src.schemas.survey_deliberation_schema import (
     SurveyConflictResolution,
@@ -87,38 +88,6 @@ def _compact_persona(persona_context: Dict[str, Any]) -> Dict[str, Any]:
     return {key: persona_context.get(key) for key in keys if persona_context.get(key) is not None}
 
 
-def _compact_world_context(world_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not isinstance(world_context, dict):
-        return {}
-    evidence_rows = []
-    for row in world_context.get("evidence", [])[:3]:
-        if not isinstance(row, dict):
-            continue
-        evidence_rows.append(
-            {
-                "topic": row.get("topic"),
-                "summary": row.get("summary"),
-                "source_type": row.get("source_type"),
-                "rank": row.get("rank"),
-            }
-        )
-    payload = {
-        "snapshot_id": world_context.get("snapshot_id"),
-        "audience": world_context.get("audience"),
-        "question": world_context.get("question"),
-        "overall_reaction": world_context.get("overall_reaction"),
-        "confidence": world_context.get("confidence"),
-        "impact_horizon": world_context.get("impact_horizon"),
-        "summary_text": world_context.get("summary_text"),
-        "factors": _coerce_text_list(world_context.get("factors"), fallback="внешние факторы не выделены"),
-        "risks": _coerce_text_list(world_context.get("risks"), fallback="риски не выделены"),
-        "opportunities": _coerce_text_list(world_context.get("opportunities"), fallback="возможности не выделены"),
-        "audience_effects": _coerce_text_list(world_context.get("audience_effects"), fallback="влияние на аудиторию не выделено"),
-        "evidence": evidence_rows,
-    }
-    return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
-
-
 def _extract_statement(question: str) -> str:
     text = str(question or "").strip()
     if not text:
@@ -146,60 +115,6 @@ def _infer_question_topic(statement: str) -> str:
     if any(token in lowered for token in ["люди", "культур", "обыча"]):
         return "openness_social"
     return "general"
-
-
-def _derive_world_signals(statement: str, world_context: Dict[str, Any]) -> Dict[str, Any]:
-    if not world_context:
-        return {
-            "question_topic": _infer_question_topic(statement),
-            "question_relevance": 0.0,
-            "negative_bias": 0.0,
-            "positive_bias": 0.0,
-            "headwind": 0.0,
-            "opportunity_support": 0.0,
-            "stability_support": 0.0,
-        }
-
-    topic = _infer_question_topic(statement)
-    reaction = str(world_context.get("overall_reaction") or "").strip().lower()
-    confidence = _clamp(world_context.get("confidence"), default=0.55)
-    horizon = str(world_context.get("impact_horizon") or "").strip().lower()
-
-    horizon_factor = {"short_term": 1.0, "medium_term": 0.85, "long_term": 0.65}.get(horizon, 0.8)
-    negative_bias = {"negative": 0.82, "neutral": 0.35, "positive": 0.12}.get(reaction, 0.35)
-    positive_bias = {"positive": 0.78, "neutral": 0.30, "negative": 0.12}.get(reaction, 0.20)
-
-    if topic == "financial_risk":
-        relevance = 0.85
-    elif topic == "financial_self_view":
-        relevance = 0.72
-    elif topic == "advertising_attitudes":
-        relevance = 0.48
-    elif topic == "trust_media":
-        relevance = 0.60
-    elif topic == "values_norms":
-        relevance = 0.25
-    elif topic == "openness_social":
-        relevance = 0.20
-    else:
-        relevance = 0.35
-
-    risks = len(world_context.get("risks", []))
-    opportunities = len(world_context.get("opportunities", []))
-    audience_effects = len(world_context.get("audience_effects", []))
-
-    headwind = _clamp((0.55 * negative_bias + 0.20 * min(1.0, risks / 3) + 0.25 * min(1.0, audience_effects / 3)) * relevance * confidence * horizon_factor, default=0.0)
-    opportunity_support = _clamp((0.55 * positive_bias + 0.45 * min(1.0, opportunities / 3)) * relevance * confidence * horizon_factor, default=0.0)
-    stability_support = _clamp((0.45 * (1.0 - negative_bias) + 0.20 * positive_bias) * relevance * confidence, default=0.0)
-    return {
-        "question_topic": topic,
-        "question_relevance": round(relevance, 3),
-        "negative_bias": round(negative_bias, 3),
-        "positive_bias": round(positive_bias, 3),
-        "headwind": round(headwind, 3),
-        "opportunity_support": round(opportunity_support, 3),
-        "stability_support": round(stability_support, 3),
-    }
 
 
 def _serialize_block(title: str, payload: Any) -> str:
@@ -724,7 +639,8 @@ class StructuredSurveyReasoner:
         model: str = LLM_MODEL,
     ):
         self.persona_context = persona_context
-        self.world_context = _compact_world_context(world_context)
+        self.news_adapter = SurveyNewsAdapter()
+        self.world_context = self.news_adapter.build(world_context)
         self.model = model
         self.persona_model = SurveyPersonaAdapter().build(persona_context)
         self.conflict_resolver = StructuredSurveyConflictResolver(model=model)
@@ -757,7 +673,13 @@ class StructuredSurveyReasoner:
 
     def _build_context(self, scenario: str) -> Dict[str, Any]:
         statement = _extract_statement(scenario)
-        world_signals = _derive_world_signals(statement, self.world_context)
+        question_topic = _infer_question_topic(statement)
+        news_resolution = self.news_adapter.resolve(
+            adapted_context=self.world_context,
+            target_topic=question_topic,
+            persona_context=self.persona_context,
+        )
+        world_signals = news_resolution["signals"]
         return {
             "scenario": scenario,
             "statement": statement,
@@ -765,7 +687,8 @@ class StructuredSurveyReasoner:
             "persona_model": _dump_model(self.persona_model),
             "persona_model_obj": self.persona_model,
             "persona_summary": self.persona_model.summary,
-            "world_context": self.world_context,
+            "world_context": news_resolution["selected_context"],
+            "world_context_bundle": self.world_context,
             "world_signals": world_signals,
             "topic_weights": _topic_weights(world_signals["question_topic"], self.persona_model),
         }
@@ -931,7 +854,7 @@ class StructuredSurveyReasoner:
         persona_anchor = _persona_anchor_text(context["persona"], persona_model, context["persona_summary"])
         topic_frame = _topic_reasoning_frame(topic, context["statement"], persona_model)
         world_phrase = ""
-        if self.world_context and relevance > 0.15:
+        if context["world_context"] and relevance > 0.15:
             world_phrase = (
                 f" Внешний контекст среды дал поправку через question_relevance={round(relevance, 2)}, "
                 f"headwind={round(headwind, 2)} и opportunity_support={round(opportunity_support, 2)}."
@@ -988,7 +911,7 @@ class StructuredSurveyReasoner:
             "voice_stances": {name: voice.stance for name, voice in voices.items()},
             "score_breakdown": score_breakdown,
             "survey_mode": "structured",
-            "news_context_used": bool(self.world_context),
+            "news_context_used": bool(context["world_context"]),
         }
         if hasattr(SurveyDecisionOutput, "model_validate"):
             return SurveyDecisionOutput.model_validate(payload)
@@ -1043,7 +966,7 @@ class StructuredSurveyReasoner:
             "persona_id": persona_id,
             "scenario": scenario,
             "persona_context": self.persona_context,
-            "world_context": self.world_context,
+            "world_context": context["world_context"],
             "emotional_history": history_payload["emotional"],
             "rational_history": history_payload["rational"],
             "social_history": history_payload["social"],
@@ -1060,11 +983,12 @@ class StructuredSurveyReasoner:
                     **({"conflict_resolver": resolver_prompt_len} if resolver_used else {}),
                 },
                 "prompt_chars": sum(prompt_lengths.values()) + resolver_prompt_len,
-                "world_context_used": bool(self.world_context),
+                "world_context_used": bool(context["world_context"]),
                 "question_topic": context["world_signals"]["question_topic"],
                 "resolver_used": resolver_used,
                 "persona_model": _dump_model(self.persona_model),
                 "topic_weights": context["topic_weights"],
+                "world_signals": context["world_signals"],
             },
             "trace_voices": {name: _voice_snapshot(voice) for name, voice in voice_map.items()},
         }
