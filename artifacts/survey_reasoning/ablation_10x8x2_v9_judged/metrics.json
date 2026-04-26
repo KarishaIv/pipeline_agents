@@ -1,0 +1,167 @@
+{
+  "generated_at": "2026-04-09T12:08:02Z",
+  "metrics_by_mode": {
+    "legacy": {
+      "total_predictions": 160,
+      "success_count": 160,
+      "error_count": 0,
+      "unique_profile_question_pairs": 80,
+      "decision_rate": 0.7312,
+      "stability_rate": 0.8875,
+      "mean_confidence_std": 0.03813,
+      "avg_confidence": 0.8456,
+      "avg_reasoning_chars": 499.33,
+      "avg_generation_count": 5.0,
+      "avg_llm_calls": 6.0,
+      "avg_prompt_chars": 0.0,
+      "prompt_chars_coverage": 0.0,
+      "avg_latency_seconds": 18.5153,
+      "median_latency_seconds": 18.4052,
+      "p95_latency_seconds": 21.7738,
+      "conflict_rate": 0.0,
+      "mixed_stance_rate": 0.0,
+      "all_uncertain_rate": 0.0,
+      "resolver_used_rate": 0.0,
+      "news_context_used": false,
+      "judge_sample_cases": 16,
+      "persona_alignment_mean": 4.7812,
+      "reasoning_nuance_mean": 4.8688,
+      "decision_coherence_mean": 4.7812,
+      "survey_mode": "legacy",
+      "profile_sample": 10,
+      "question_sample": 8,
+      "repeats": 2
+    },
+    "structured": {
+      "total_predictions": 160,
+      "success_count": 160,
+      "error_count": 0,
+      "unique_profile_question_pairs": 80,
+      "decision_rate": 0.8,
+      "stability_rate": 1.0,
+      "mean_confidence_std": 0.0033,
+      "avg_confidence": 0.6722,
+      "avg_reasoning_chars": 1099.25,
+      "avg_generation_count": 4.0,
+      "avg_llm_calls": 4.16,
+      "avg_prompt_chars": 12081.76,
+      "prompt_chars_coverage": 1.0,
+      "avg_latency_seconds": 4.1505,
+      "median_latency_seconds": 3.7134,
+      "p95_latency_seconds": 6.7471,
+      "conflict_rate": 0.1625,
+      "mixed_stance_rate": 0.05,
+      "all_uncertain_rate": 0.0,
+      "resolver_used_rate": 0.1625,
+      "news_context_used": false,
+      "question_topics": [
+        "advertising_attitudes",
+        "financial_risk",
+        "financial_self_view",
+        "general",
+        "openness_social",
+        "trust_media"
+      ],
+      "judge_sample_cases": 16,
+      "persona_alignment_mean": 4.825,
+      "reasoning_nuance_mean": 4.7812,
+      "decision_coherence_mean": 4.8688,
+      "survey_mode": "structured",
+      "profile_sample": 10,
+      "question_sample": 8,
+      "repeats": 2
+    }
+  },
+  "comparison": {
+    "decision_rate": {
+      "legacy": 0.7312,
+      "structured": 0.8,
+      "delta_structured_minus_legacy": 0.0688
+    },
+    "stability_rate": {
+      "legacy": 0.8875,
+      "structured": 1.0,
+      "delta_structured_minus_legacy": 0.1125
+    },
+    "mean_confidence_std": {
+      "legacy": 0.03813,
+      "structured": 0.0033,
+      "delta_structured_minus_legacy": -0.03483
+    },
+    "avg_confidence": {
+      "legacy": 0.8456,
+      "structured": 0.6722,
+      "delta_structured_minus_legacy": -0.1734
+    },
+    "avg_reasoning_chars": {
+      "legacy": 499.33,
+      "structured": 1099.25,
+      "delta_structured_minus_legacy": 599.92
+    },
+    "avg_generation_count": {
+      "legacy": 5.0,
+      "structured": 4.0,
+      "delta_structured_minus_legacy": -1.0
+    },
+    "avg_llm_calls": {
+      "legacy": 6.0,
+      "structured": 4.16,
+      "delta_structured_minus_legacy": -1.84
+    },
+    "avg_prompt_chars": {
+      "legacy": 0.0,
+      "structured": 12081.76,
+      "delta_structured_minus_legacy": 12081.76
+    },
+    "avg_latency_seconds": {
+      "legacy": 18.5153,
+      "structured": 4.1505,
+      "delta_structured_minus_legacy": -14.3648
+    },
+    "median_latency_seconds": {
+      "legacy": 18.4052,
+      "structured": 3.7134,
+      "delta_structured_minus_legacy": -14.6918
+    },
+    "p95_latency_seconds": {
+      "legacy": 21.7738,
+      "structured": 6.7471,
+      "delta_structured_minus_legacy": -15.0267
+    },
+    "conflict_rate": {
+      "legacy": 0.0,
+      "structured": 0.1625,
+      "delta_structured_minus_legacy": 0.1625
+    },
+    "mixed_stance_rate": {
+      "legacy": 0.0,
+      "structured": 0.05,
+      "delta_structured_minus_legacy": 0.05
+    },
+    "all_uncertain_rate": {
+      "legacy": 0.0,
+      "structured": 0.0,
+      "delta_structured_minus_legacy": 0.0
+    },
+    "resolver_used_rate": {
+      "legacy": 0.0,
+      "structured": 0.1625,
+      "delta_structured_minus_legacy": 0.1625
+    },
+    "persona_alignment_mean": {
+      "legacy": 4.7812,
+      "structured": 4.825,
+      "delta_structured_minus_legacy": 0.0438
+    },
+    "reasoning_nuance_mean": {
+      "legacy": 4.8688,
+      "structured": 4.7812,
+      "delta_structured_minus_legacy": -0.0876
+    },
+    "decision_coherence_mean": {
+      "legacy": 4.7812,
+      "structured": 4.8688,
+      "delta_structured_minus_legacy": 0.0876
+    }
+  }
+}

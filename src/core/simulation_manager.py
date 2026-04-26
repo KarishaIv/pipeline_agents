@@ -6,11 +6,13 @@ from typing import Iterable, List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import numpy as np
 try:
     from src.agents.multi_agent import MultiAgentSystem
 except ImportError:
     MultiAgentSystem = None
 from src.agents.survey_agent import MultiAgentReasoner
+from src.agents.structured_survey_reasoner import StructuredSurveyReasoner
 from src.core.storage import StorageManager
 from src.core.visualization import EmotionalVisualizer
 from config import *
@@ -29,9 +31,14 @@ class SimulationManager:
                  visualize: bool = True,
                  run_retries: int = 1,
                  executor_workers: int = 4,
-                 agent_mode: str = "credit",
-                 survey_questions: List[str] = None,
-                 world_contexts: Dict[str, dict] = None):
+                 agent_mode: str = "survey",
+                 decision_mode: str = "direct",
+                 survey_mode: str = "structured",
+                 news_context: Optional[Dict[str, Any]] = None,
+                 survey_questions: Optional[List[str]] = None,
+                 visualize_sample: int = 0,
+                 summary_visualize: bool = True,
+                 world_contexts: Optional[Dict[str, dict]] = None):
         self.out_dir = out_dir
         self.concurrency = concurrency
         self._sem = asyncio.Semaphore(concurrency)
@@ -40,8 +47,19 @@ class SimulationManager:
         self.run_retries = run_retries
         self.executor = ThreadPoolExecutor(max_workers=executor_workers)
         self.agent_mode = agent_mode
+        self.decision_mode = decision_mode
+        self.survey_mode = survey_mode
+        self.news_context = news_context
         self.survey_questions = survey_questions or []
-        self.world_contexts = world_contexts or {}  # {ta_name → news_context}
+        self.visualize_sample = max(0, int(visualize_sample))
+        self.summary_visualize = bool(summary_visualize)
+        self.world_contexts = world_contexts or {}  # {ta_name -> news_context}
+
+    def _resolve_world_context(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        if self.news_context is not None:
+            return self.news_context
+        ta_name = profile.get("target_audience_name", "")
+        return self.world_contexts.get(ta_name, {})
 
     async def _run_single(self, profile: Dict[str, Any], steps: int, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -54,21 +72,35 @@ class SimulationManager:
             try:
                 if self.agent_mode == "survey":
                     logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
-
-                    ta_name = profile.get("target_audience_name", "")
-                    world_ctx = self.world_contexts.get(ta_name, {})
-                    reasoner = MultiAgentReasoner(profile, world_context=world_ctx)
+                    world_ctx = self._resolve_world_context(profile)
+                    if self.survey_mode == "structured":
+                        reasoner = StructuredSurveyReasoner(
+                            profile,
+                            world_context=world_ctx,
+                        )
+                    else:
+                        reasoner = MultiAgentReasoner(profile, world_context=world_ctx)
                     survey_results = await reasoner.answer_survey_questions(self.survey_questions)
                     return {
                         "profile": profile,
                         "survey_responses": survey_results, 
                         "mode": "survey",
+                        "survey_mode": self.survey_mode,
                         "total_questions": len(self.survey_questions),
                         "timestamp": datetime.utcnow().isoformat()
                     }
                 else:
                     logger.debug(f"[Persona:{persona_name}] Запуск кредитного режима, шагов: {steps}")
-                    mas = MultiAgentSystem(profile, steps=steps)
+                    if MultiAgentSystem is None:
+                        raise RuntimeError(
+                            "Credit mode is unavailable in this branch configuration. Use --agent_mode survey."
+                        )
+                    mas = MultiAgentSystem(
+                        profile,
+                        steps=steps,
+                        decision_mode=self.decision_mode,
+                        news_context=self.news_context,
+                    )
                     coro = mas.run_simulation()
                     result = await asyncio.wait_for(coro, timeout=self.timeout)
                     return result
@@ -100,16 +132,7 @@ class SimulationManager:
                 else:
                     logger.debug(f"[Run:{run_id}] Сохранение результатов кредитной симуляции")
                     await StorageManager.save_result_stream(result, out_dir, run_id)
-
-                    if self.visualize:
-                        logger.debug(f"[Run:{run_id}] Генерация визуализации эмоций")
-                        viz_data = []
-                        for idx, h in enumerate(result.get("session_history", []), start=1):
-                            esa = h.get("emotional_state", {})
-                            for emo in ["mood", "stress", "confidence", "trust_in_bank", "urgency"]:
-                                viz_data.append({"step": idx, "agent": "Persona", "emotion": emo, "intensity": esa.get(emo, 0.0)})
-                        save_path = out_dir / run_id / f"{run_id}_emotions.html"
-                        await EmotionalVisualizer.plot_async(viz_data, save_path)
+                    result["_run_id"] = run_id
                 
                 elapsed = time.time() - started
                 logger.info(f"[Run:{run_id}] END за {elapsed:.1f}s")
@@ -157,6 +180,8 @@ class SimulationManager:
         
         if self.agent_mode == "survey":
             await self._generate_survey_summary(results, out_dir)
+        else:
+            await self._generate_visualizations(results, out_dir)
         
         successful = len([r for r in results if 'error' not in r])
         logger.info(f"Симуляции завершены: {successful}/{len(results)} успешных")
@@ -223,6 +248,7 @@ class SimulationManager:
             "total_questions": len(self.survey_questions),
             "question_statistics": question_stats_list,
             "agent_mode": "survey",
+            "survey_mode": self.survey_mode,
             "overall_agreement_percent": round(
                 sum(stats["agree"] for stats in question_stats_list) / 
                 (sum(stats["total"] for stats in question_stats_list) or 1) * 100, 2
@@ -246,7 +272,8 @@ class SimulationManager:
             "total_respondents": summary["total_respondents"],
             "overall_agreement_percent": summary["overall_agreement_percent"],
             "question_statistics": simplified_stats,
-            "agent_mode": "survey"
+            "agent_mode": "survey",
+            "survey_mode": self.survey_mode,
         }
         
         await StorageManager.save_json_async(
@@ -266,3 +293,82 @@ class SimulationManager:
         
         logger.info(f"Общее согласие: {summary['overall_agreement_percent']:.1f}%")
         logger.info(f"Сводка опроса сохранена: {len(results)} респондентов, {len(question_stats)} вопросов")
+
+    async def _generate_visualizations(self, results: List[Dict[str, Any]], out_dir: Path) -> None:
+        if not self.visualize or self.agent_mode != "credit":
+            return
+
+        successful = [r for r in results if isinstance(r, dict) and r.get("session_history")]
+        if not successful:
+            logger.warning("Нет успешных результатов для визуализации")
+            return
+
+        if self.summary_visualize:
+            summary_viz = self._build_summary_viz_data(successful)
+            if summary_viz:
+                await EmotionalVisualizer.plot_async(summary_viz, out_dir / "summary_emotions.html")
+
+        if self.visualize_sample > 0:
+            sample = successful[: self.visualize_sample]
+            for idx, result in enumerate(sample, 1):
+                run_id = result.get("_run_id") or result.get("run_id") or f"sample_{idx}"
+                viz_data = self._build_person_viz_data(result)
+                if not viz_data:
+                    continue
+                save_path = out_dir / run_id / f"{run_id}_emotions.html"
+                await EmotionalVisualizer.plot_async(viz_data, save_path)
+
+    @staticmethod
+    def _build_person_viz_data(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        history = result.get("session_history", [])
+        profile_name = result.get("profile", {}).get("name", "Persona")
+
+        viz_data = []
+        for record in history:
+            step = record.get("step")
+            emotions = record.get("emotional_state", {}) or {}
+            for emotion, value in emotions.items():
+                try:
+                    intensity = float(value)
+                except (TypeError, ValueError):
+                    continue
+                viz_data.append(
+                    {
+                        "agent": profile_name,
+                        "emotion": emotion,
+                        "step": step,
+                        "intensity": intensity,
+                    }
+                )
+        return viz_data
+
+    @staticmethod
+    def _build_summary_viz_data(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        bucket: Dict[tuple, List[float]] = {}
+        for result in results:
+            for record in result.get("session_history", []):
+                step = record.get("step")
+                emotions = record.get("emotional_state", {}) or {}
+                for emotion, value in emotions.items():
+                    try:
+                        intensity = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    bucket.setdefault((emotion, step), []).append(intensity)
+
+        summary = []
+        for (emotion, step), values in sorted(bucket.items(), key=lambda x: (x[0][0], x[0][1])):
+            arr = np.array(values, dtype=float)
+            if arr.size == 0:
+                continue
+            mean = float(np.nanmean(arr))
+            p25 = float(np.nanpercentile(arr, 25))
+            p75 = float(np.nanpercentile(arr, 75))
+            summary.extend(
+                [
+                    {"agent": "mean", "emotion": emotion, "step": step, "intensity": mean},
+                    {"agent": "p25", "emotion": emotion, "step": step, "intensity": p25},
+                    {"agent": "p75", "emotion": emotion, "step": step, "intensity": p75},
+                ]
+            )
+        return summary
