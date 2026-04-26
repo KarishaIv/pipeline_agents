@@ -1,337 +1,174 @@
 # Survey Pipeline with Multi-Agent Simulation
 
-Комплексная система для моделирования поведения российских клиентов банка при принятии решений о кредите. Использует Probabilistic Graphical Models (PGM) для генерации синтетических персон, k-NN matching для переноса личностных черт из американского датасета (Nemotron), и мультиагентную симуляцию на базе LLM для моделирования эмоций, поведения и финансовых решений.
+Репозиторий для генерации синтетических персон и запуска мультиагентных симуляций в двух режимах:
+- `credit mode (кредитный режим)` для моделирования реакции на кредитное предложение;
+- `survey mode (опросный режим)` для генерации ответов на опросные вопросы.
 
----
+Текущий основной инженерный результат в репозитории — `structured survey mode (структурированный survey-режим)`. Он работает через явные `voices (голоса)`, кодовую агрегацию и поддерживает подключение `news context (новостного контекста)`.
 
-## 📊 Схема пайплайна
+## Что есть в репозитории
 
-![Схема пайплайна](diagram.png)
+- `main.py` — главный `CLI entrypoint (интерфейс командной строки)`.
+- `src/orchestration.py` — сборка полного пайплайна.
+- `src/core/simulation_manager.py` — маршрутизация в `credit` или `survey` режим.
+- `src/agents/structured_survey_reasoner.py` — новый `structured survey runtime (структурированный survey-рантайм)`.
+- `src/agents/survey_news_adapter.py` — `news adapter (адаптер новостного контекста)` для survey.
+- `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных news JSON.
+- `scripts/benchmarks/benchmark_survey_reasoning.py` — основной `survey benchmark (survey-бенчмарк)`.
 
----
+## Зависимости и окружение
 
-## 🚀 Запуск
+Рекомендуемая среда:
+- `Python 3.12`
+- `.env` с переменными:
+  - `OPENAI_API_KEY`
+  - `YANDEX_FOLDER_ID`
 
-### Требования
-- Python 3.10+
-- OpenAI API ключ
-- Установленные зависимости (см. `requirements.txt`)
+Установка:
 
-### Базовый запуск
 ```bash
-python main.py --api_key YOUR_YANDEX_API_KEY
+python3.12 -m venv .venv312
+source .venv312/bin/activate
+pip install -r requirements.txt
 ```
 
-### Полный запуск с параметрами
+## Быстрый запуск survey-пайплайна
+
+### Рекомендуемый режим: structured survey
+
 ```bash
+source .venv312/bin/activate
 python main.py \
-  --api_key YOUR_YANDEX_API_KEY \
+  --agent_mode survey \
+  --survey-mode structured \
   --evidence data/evidence.json \
-  --synthetic_size 100 \
-  --nemo_size 5000 \
   --output outputs/ \
-  --simulation_steps 3 \
-  --concurrency 4 \
-  --timeout 180.0
+  --concurrency 15 \
+  --timeout 60
 ```
 
----
+Что делает этот запуск:
+- загружает `evidence (описание аудиторий)` из `data/evidence.json`;
+- генерирует или фильтрует персоны;
+- загружает вопросы из `data/survey_questions.json`;
+- прогоняет для каждой персоны `structured survey reasoner (структурированный survey-рантайм)`;
+- сохраняет `profile_*.json`, `survey_summary.json` и остальные артефакты в `outputs/`.
 
-## ⚙️ Гиперпараметры и конфигурация
+### Старый режим: legacy survey
 
-### Параметры командной строки
-
-| Параметр | Тип | По умолчанию | Описание |
-|----------|-----|-------------|----------|
-| `--api_key` | str | **обязательный** | OpenAI API ключ для LLM вызовов |
-| `--evidence` | str | `data/evidence.json` | Путь к JSON с evidence-данными для PGM, сам запрос на социальную группу для исследования |
-| `--synthetic_size` | int | 10 | Количество синтетических российских персон |
-| `--nemo_size` | int | 5000 | Размер американского датасета (Nemotron) |
-| `--output` | str | `outputs/` | Директория для сохранения результатов |
-| `--simulation_steps` | int | 2 | Количество шагов в мультиагентной симуляции |
-| `--concurrency` | int | 3 | Число параллельных симуляций персон |
-| `--timeout` | float | 180.0 | Таймаут на одну персону (секунды) |
-
-### Конфигурация в `config.py`
-
-```python
-# K-NN параметры
-TOP_N_CATEGORIES = 10      # Топ-N категориальных комбинаций
-TOP_N_NEIGHBORS = 10       # Топ-N ближайших американцев
-
-# Размеры датасетов
-DEFAULT_SYNTHETIC_SIZE = 10
-DEFAULT_NEMO_SIZE = 5000
-
-# Пути к данным
-DATA_PATHS = {
-    'evidence': 'data/evidence.json',
-    'synthetic_data': 'data/synthetic_personas.csv',
-    'nemotron_data': 'data/nemotron_americans.csv'
-}
+```bash
+source .venv312/bin/activate
+python main.py \
+  --agent_mode survey \
+  --survey-mode legacy
 ```
 
----
+Этот режим нужен в основном для сравнения с `structured survey mode (структурированным survey-режимом)`.
 
-## 📖 Общая идея этапов
+## Подключение news context
 
-### Этап 1-4: Генерация синтетических российских персон (PGM)
+Для `structured survey mode (структурированного survey-режима)` можно передать внешний `news context (новостной контекст)` через `--news-context-path`.
 
-**Цель**: Создать реалистичных российских клиентов с известными демографическими параметрами.
+В репозитории уже лежат два готовых `news snapshots (снимка новостного контекста)` под текущие рабочие аудитории:
+- `data/news_context/context_mothers_35_39_20260426.json`
+- `data/news_context/context_fathers_45_49_20260426.json`
 
-**Процесс**:
-1. **Загрузка данных**: Считываем evidence (условия запроса, например, "мужчина 30-40 лет, Москва") и базовый датасет (реальные транзакционные данные или синтетические)
-2. **Preprocessing**: Дискретизируем continuous переменные (возраст, доход → группы)
-3. **Обучение PGM**: Строим Discrete Bayesian Network с каузальными связями:
-   ```
-   age_group → marital_status
-   age_group → children_group
-   education → occupation → income_level
-   region_type → income_level
-   ...
-   ```
-4. **Генерация**: Используем likelihood-weighted sampling с evidence, чтобы сгенерировать N российских персон, удовлетворяющих запросу evidence
+Пример запуска:
 
-**Результат**: DataFrame с синтетическими российскими персонами (демография без OCEAN)
-
----
-
-### Этап 5-8: Transfer OCEAN из американского датасета
-
-**Цель**: Назначить каждой российской персоне личностные черты (Big Five OCEAN).
-
-**Проблема**: У нас нет данных OCEAN для россиян, но есть для американцев (Nemotron).
-
-**Решение через k-NN**:
-
-1. **Category Matching**: Сначала находим американцев с похожими категориальными признаками (пол, образование, профессия - все что есть по соц.демографии)
-   - Вычисляем Euclidean distance по категориям
-   - Отбираем топ-10 комбинаций
-   - Создаём filtered pool американцев
-
-2. **k-NN**: Для каждой российской персоны:
-   - Вычисляем расстояние до всех американцев из filtered pool
-   - Находим k=10 ближайших соседей
-   - Извлекаем их OCEAN профили через агента
-
-3. **Агрегация OCEAN**:
-   - Вычисляем mean и std по OCEAN соседей
-   - Добавляем к профилю российской персоны как `openness_mean`, `openness_std`, etc.
-
-**Результат**: Российские персоны с демографией + OCEAN статистикой
-
----
-
-### Этап 9: Multi-Agent Simulation (Ядро системы)
-
-**Цель**: Смоделировать взаимодействие клиента с банковским приложением и принятие решения о кредите.
-
-**Архитектура мультиагентной системы**:
-
-```
-MultiAgentSystem (оркестратор)
-  │
-  ├── PersonaAgent (клиент)
-  │     ├── EmotionAgent (эмоции)
-  │     └── ToolAgent (ответы приложения)
-  │
-  ├── FinancialAgent (банк)
-  │
-  └── DecisionAgent (финальное решение)
+```bash
+source .venv312/bin/activate
+python main.py \
+  --agent_mode survey \
+  --survey-mode structured \
+  --news-context-path data/news_context/context_mothers_35_39_20260426.json
 ```
 
-#### 9.1 PersonaAgent — Моделирование клиента
+Важно:
+- `main.py` принимает только один `news context file (файл новостного контекста)` на запуск;
+- если в наборе персон смешаны `mothers` и `fathers`, то один и тот же контекст будет точнее для одной аудитории и слабее для другой;
+- для строгой оценки эффекта новостей лучше запускать `survey benchmark (survey-бенчмарк)` отдельно по аудиториям.
 
-**Инициализация**:
-- Определяет цель визита в приложение (через LLM): "оформить кредит", "проверить баланс", "оплатить счета", etc.
-- EmotionAgent устанавливает начальное эмоциональное состояние (mood, stress, confidence, bank_trust, urgency)
+## Основные флаги
 
-**Цикл симуляции (N шагов)**:
-Каждый шаг = одно действие клиента в приложении:
+- `--agent_mode credit|survey`
+  - выбирает общий режим пайплайна.
+- `--survey-mode legacy|structured`
+  - выбирает старый или новый survey runtime.
+- `--decision-mode direct|compact_debate`
+  - режим кредитного рассуждения для `credit mode (кредитного режима)`.
+- `--news-context-path PATH`
+  - путь к входному `news context JSON (news context JSON-файлу)` для `structured survey` или `compact_debate`.
+- `--evidence PATH`
+  - путь к `evidence JSON (evidence JSON-файлу)` с описанием целевых аудиторий.
+- `--output PATH`
+  - директория сохранения результатов.
+- `--concurrency N`
+  - число параллельных симуляций персон.
+- `--timeout SECONDS`
+  - таймаут на одну персону.
+- `--no-pgm`
+  - использовать не PGM-генерацию, а фильтрацию реальных данных.
+- `--no-oceanflag`
+  - отключить перенос `OCEAN traits (личностных черт OCEAN)`.
 
-1. **PersonaAgent.act_step()**:
-   - LLM генерирует следующее действие на основе:
-     - Цели клиента
-     - Текущих эмоций
-     - Истории последних действий
-   - Пример: "нажал на раздел Кредиты", "открыл калькулятор кредита", "запросил условия"
+## Survey benchmark
 
-2. **ToolAgent.respond()**:
-   - Симулирует ответ банковского приложения
-   - Примеры: "показал список кредитов", "одобрил предварительную заявку", "вернул ошибку"
+Для воспроизводимого сравнения `legacy vs structured (старого и нового режима)` и `with news vs without news (с новостями и без новостей)` используй:
 
-3. **EmotionAgent.update_state()**:
-   - Обновляет эмоции после действия и ответа
-   - Если одобрение → stress↓, confidence↑
-   - Если отказ → stress↑, confidence↓, bank_trust↓
-
-4. **История обновляется**: Сохраняется запись (action, tool_response, emotional_state)
-
-**Результат цикла**: История взаимодействий + финальное эмоциональное состояние
-
-#### 9.2 FinancialAgent — Генерация push-уведомления
-
-После N шагов симуляции:
-
-1. **Создание персонализированного push** (через LLM):
-   - Анализирует профиль и поведение клиента
-   - Генерирует уведомление: "Специальное предложение: кредит под 12% для вас!"
-
-2. **Предварительная оценка** (через LLM):
-   - Предсказывает вероятность согласия клиента
-   - Объясняет reasoning
-
-**Результат**: Push-уведомление + prediction вероятности
-
-#### 9.3 PersonaAgent.react_to_push()
-
-Клиент получает push:
-- LLM моделирует реакцию: "заинтересуется", "проигнорирует", "раздражится"
-- EmotionAgent обновляет эмоции после push
-
-#### 9.4 DecisionAgent — Финальное решение
-
-**Вход**:
-- Полный профиль клиента
-- История всех действий в приложении
-- Финальное эмоциональное состояние
-- Push-уведомление и реакция
-
-**Процесс** (через LLM):
-- Комплексный анализ всех факторов
-- Принятие решения от лица клиента: брать ли кредит
-- Учёт целей, эмоций, финансового благополучия
-
-**Результат**: 
-```json
-{
-  "will_take_credit": true/false,
-  "decision_reasoning": "объяснение",
-  "emotional_factors": ["стресс снизился", "высокая уверенность"],
-  "probability_score": 0.75
-}
+```bash
+source .venv312/bin/activate
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_run
 ```
 
----
+Пример с новостным контекстом:
 
-### Этап 10: Сохранение результатов
-
-**Асинхронное потоковое сохранение**:
-- Каждая персона сохраняется сразу после завершения симуляции
-- Не ждём окончания всех персон
-- Минимизация потери данных при сбоях
-
-**Структура выходных данных**:
-```
-outputs/
-  └── sim_20231105_143022/
-      ├── persona_0_full.json      # Полная история симуляции
-      ├── persona_1_full.json
-      ├── ...
-      ├── summary_20231105_143022.json  # Агрегированная статистика
-      └── visualizations/
-          ├── persona_0_emotions.png    # График эмоций
-          └── ...
+```bash
+source .venv312/bin/activate
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --news-context-path data/news_context/context_mothers_35_39_20260426.json \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_news_run
 ```
 
-**Сохраняемые данные для каждой персоны**:
-- Исходный профиль (демография + OCEAN)
-- Цель визита
-- Полная история шагов (actions, tool responses, emotions)
-- Push-уведомление и реакция
-- Финальное решение с обоснованием
-- Визуализация динамики эмоций (опционально)
+Главные выходы `survey benchmark (survey-бенчмарка)`:
+- `metrics.json`
+- `predictions.csv`
+- `judge_results.csv`
+- `manifest.json`
 
----
+## Credit mode
 
-## 🔧 Параллелизация и производительность
+`credit mode (кредитный режим)` остается доступным:
 
-### Асинхронная архитектура
-
-**SimulationManager** управляет параллельным запуском симуляций:
-
-```python
-# Создание менеджера
-manager = SimulationManager(
-    concurrency=4,      # Одновременно 4 персоны
-    timeout=180.0,      # Таймаут на персону
-    run_retries=1       # Повторные попытки при сбое
-)
-
-# Асинхронный запуск
-results = await manager.run_many(personas, steps=3)
+```bash
+source .venv312/bin/activate
+python main.py \
+  --agent_mode credit \
+  --decision-mode compact_debate
 ```
 
-**Механизм ограничения параллелизма**:
-- `asyncio.Semaphore(concurrency)` — не более N персон одновременно
-- `asyncio.wait_for(timeout)` — принудительное прерывание зависших симуляций
-- `asyncio.as_completed()` — обработка результатов по мере готовности
+При необходимости туда тоже можно передать `--news-context-path`, но основной финальный результат в репозитории сейчас связан именно с `structured survey mode (структурированным survey-режимом)`.
 
----
+## Что не входит в основной merge
 
-## 📚 Ключевые компоненты
-
-### Agents
-
-| Agent | Роль | Технологии |
-|-------|------|-----------|
-| **PersonaAgent** | Моделирование клиента | LLM (GPT), structured outputs |
-| **EmotionAgent** | Отслеживание эмоций | LLM psychological prompts |
-| **ToolAgent** | Симуляция приложения | Rule-based + LLM |
-| **FinancialAgent** | Генерация push | LLM personalization |
-| **DecisionAgent** | Принятие решения | LLM reasoning |
-
-### Schemas (Pydantic)
-
-Все данные валидируются через Pydantic:
-- `PersonaGoal`, `PersonaAction`, `PersonaReaction`, `PersonaSessionRecord`
-- `EmotionalStateSchema` (mood, stress, confidence, bank_trust, urgency)
-- `ToolResponseSchema` (status, message, data)
-- `FinancialPush`, `FinancialPrediction`
-- `DecisionOutcome` (will_take_credit, reasoning, emotional_factors)
-
-### Core Utilities
-
-- **llm_utils.py**: `robust_llm_call()` с retry logic и structured outputs
-- **storage.py**: Асинхронное сохранение JSON
-- **visualization.py**: Графики динамики эмоций (matplotlib)
-
----
-
-## 🔬 Технические детали
-
-### PGM (Probabilistic Graphical Model)
-
-**Библиотека**: pgmpy  
-**Тип модели**: Discrete Bayesian Network  
-**Обучение**: Maximum Likelihood Estimation  
-**Inference**: Likelihood-weighted sampling
-
-**Граф зависимостей**:
-```
-age_group → marital_status, children_group, education, income_level
-education → occupation, income_level
-marital_status → children_group
-region_type → income_level
-occupation → income_level
-gender → marital_status, income_level
-```
-
-### k-NN Matching
-
-**Библиотека**: scipy.spatial.distance  
-**Метрика**: Euclidean distance (после нормализации)  
-**Процесс**:
-1. Category filtering (categorical exact match)
-2. Distance computation (continuous features)
-3. Top-k selection
-4. OCEAN aggregation (mean + std)
-
-### LLM Integration
-
-**Модель**: OpenAI GPT (gpt-4)  
-**Режим**: Structured outputs (JSON mode)  
-**Retry**: До 3 попыток при ошибках API  
-**Timeout**: Конфигурируемый per-call
-
----
+Внешний генератор `news context (новостного контекста)` из папки `multi_agent_rag/` не является частью основного пайплайна этого репозитория. В основной код здесь перенесена только совместимость с его `JSON outputs (JSON-выходами)` и примеры готовых `news snapshots (снимков новостного контекста)` для текущих аудиторий.
