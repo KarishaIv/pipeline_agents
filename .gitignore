@@ -8,13 +8,22 @@ __pycache__/
 .DS_Store
 .env
 .venv
-Basic PGM.ipynb
 .venv312/
+Basic PGM.ipynb
 _canonical_repo/
+
+# Virtual environment
+venv/
+
+# Simulation outputs
 outputs/
-data/benchmark/
-data/benchmark_external/
 pipeline.log
 
+# Qdrant files
+qdrant_storage/
+
+# Local benchmark/news worktrees
+data/benchmark/
+data/benchmark_external/
 /multi_agent_rag/
 /context_*.json

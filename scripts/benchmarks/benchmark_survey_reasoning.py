@@ -29,12 +29,12 @@ from src.agents.survey_agent import MultiAgentReasoner
 from src.benchmarks.common import QuotaGuard
 from src.benchmarks.judge import judge_survey_reasoning
 def _ensure_llm_env() -> None:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("YANDEX_API_KEY") or os.getenv("OPENAI_API_KEY")
     folder_id = os.getenv("YANDEX_FOLDER_ID")
     if api_key and folder_id:
         return
     raise SystemExit(
-        "Missing LLM credentials. Set OPENAI_API_KEY and YANDEX_FOLDER_ID in the shell or in .env before running benchmark_survey_reasoning.py."
+        "Missing LLM credentials. Set YANDEX_API_KEY (preferred) or OPENAI_API_KEY, and YANDEX_FOLDER_ID in the shell or in .env before running benchmark_survey_reasoning.py."
     )
 
 

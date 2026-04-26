@@ -6,9 +6,23 @@ from yandex_chain import YandexGPTModel
 PROJECT_ROOT = Path(__file__).parent
 
 
-LLM_MODEL = YandexGPTModel.Pro  
+LLM_MODEL = YandexGPTModel.Pro
 LLM_TEMPERATURE = 0.5
 LLM_MAX_RETRIES = 3
+
+YANDEX_GPT_CONFIG = {
+    "folder_id": "",
+    "api_key": "",
+    "model_uri": "",
+}
+
+def set_yandex_config(folder_id: str, api_key: str):
+    """Set YandexGPT credentials (Api-Key auth)"""
+    YANDEX_GPT_CONFIG["folder_id"] = folder_id
+    YANDEX_GPT_CONFIG["api_key"] = api_key
+    YANDEX_GPT_CONFIG["model_uri"] = f"gpt://{folder_id}/yandexgpt/latest"
+    os.environ["YANDEX_FOLDER_ID"] = folder_id
+    os.environ["YANDEX_API_KEY"] = api_key
 
 # Пути к данным
 DATA_PATHS = {
@@ -70,13 +84,10 @@ TOP_N_CATEGORIES = 2
 DEFAULT_NEMO_SIZE = 10000
 
 
-def set_openai_api_key(api_key: str, folder_id: str = None):
-    """Set Yandex GPT API key and folder ID"""
-    os.environ["OPENAI_API_KEY"] = api_key
-    if folder_id:
-        os.environ["YANDEX_FOLDER_ID"] = folder_id
-    else:
-        os.environ["YANDEX_FOLDER_ID"] = api_key
+def set_yandex_credentials(api_key: str, folder_id: str = None):
+    """Set Yandex GPT API key and optional folder ID"""
+    os.environ["YANDEX_API_KEY"] = api_key
+    os.environ["YANDEX_FOLDER_ID"] = folder_id
 
 GMM_CONFIG = {'n_components': 1,        
     'min_components': 3,           # минимальное количество кластеров для auto
@@ -93,7 +104,7 @@ OCEAN_CALCULATION = {
 
 OUTPUT_COLUMNS = [
      *MATCH_COLS, # социо-демо
-    "openness", "conscientiousness", "extraversion",  "agreeableness", "neuroticism"                    # OCEAN
+    "openness", "conscientiousness", "extraversion",  "agreeableness", "neuroticism",                    # OCEAN
     'cluster_id', 'group_key', 'cluster_weight',            # кластер инфо
     'n_americans_in_group', 'n_clusters_total'              # статистика
 ]

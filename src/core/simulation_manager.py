@@ -7,8 +7,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import numpy as np
-
-from src.agents.multi_agent import MultiAgentSystem
+try:
+    from src.agents.multi_agent import MultiAgentSystem
+except ImportError:
+    MultiAgentSystem = None
 from src.agents.survey_agent import MultiAgentReasoner
 from src.agents.structured_survey_reasoner import StructuredSurveyReasoner
 from src.core.storage import StorageManager
@@ -29,18 +31,18 @@ class SimulationManager:
                  visualize: bool = True,
                  run_retries: int = 1,
                  executor_workers: int = 4,
-                 agent_mode: str = "credit",
+                 agent_mode: str = "survey",
                  decision_mode: str = "direct",
-                 survey_mode: str = "legacy",
+                 survey_mode: str = "structured",
                  news_context: Optional[Dict[str, Any]] = None,
-                 survey_questions: List[str] = None,
+                 survey_questions: Optional[List[str]] = None,
                  visualize_sample: int = 0,
-                 summary_visualize: bool = True):
+                 summary_visualize: bool = True,
+                 world_contexts: Optional[Dict[str, dict]] = None):
         self.out_dir = out_dir
         self.concurrency = concurrency
         self._sem = asyncio.Semaphore(concurrency)
         self.timeout = timeout
-        # legacy flag kept for backward compatibility
         self.visualize = visualize
         self.run_retries = run_retries
         self.executor = ThreadPoolExecutor(max_workers=executor_workers)
@@ -51,6 +53,13 @@ class SimulationManager:
         self.survey_questions = survey_questions or []
         self.visualize_sample = max(0, int(visualize_sample))
         self.summary_visualize = bool(summary_visualize)
+        self.world_contexts = world_contexts or {}  # {ta_name -> news_context}
+
+    def _resolve_world_context(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        if self.news_context is not None:
+            return self.news_context
+        ta_name = profile.get("target_audience_name", "")
+        return self.world_contexts.get(ta_name, {})
 
     async def _run_single(self, profile: Dict[str, Any], steps: int, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -63,13 +72,14 @@ class SimulationManager:
             try:
                 if self.agent_mode == "survey":
                     logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
+                    world_ctx = self._resolve_world_context(profile)
                     if self.survey_mode == "structured":
                         reasoner = StructuredSurveyReasoner(
                             profile,
-                            world_context=self.news_context,
+                            world_context=world_ctx,
                         )
                     else:
-                        reasoner = MultiAgentReasoner(profile)
+                        reasoner = MultiAgentReasoner(profile, world_context=world_ctx)
                     survey_results = await reasoner.answer_survey_questions(self.survey_questions)
                     return {
                         "profile": profile,
@@ -81,6 +91,10 @@ class SimulationManager:
                     }
                 else:
                     logger.debug(f"[Persona:{persona_name}] Запуск кредитного режима, шагов: {steps}")
+                    if MultiAgentSystem is None:
+                        raise RuntimeError(
+                            "Credit mode is unavailable in this branch configuration. Use --agent_mode survey."
+                        )
                     mas = MultiAgentSystem(
                         profile,
                         steps=steps,
@@ -118,7 +132,6 @@ class SimulationManager:
                 else:
                     logger.debug(f"[Run:{run_id}] Сохранение результатов кредитной симуляции")
                     await StorageManager.save_result_stream(result, out_dir, run_id)
-                    # keep run_id for optional post-run visualizations
                     result["_run_id"] = run_id
                 
                 elapsed = time.time() - started

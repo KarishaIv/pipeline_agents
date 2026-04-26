@@ -1,28 +1,32 @@
-# Multi-Agent Persona and Survey Pipeline
+# Survey Pipeline with Structured Reasoning
 
-Репозиторий для генерации синтетических персон и запуска мультиагентных симуляций в двух режимах:
-- `credit mode (кредитный режим)` для моделирования реакции на кредитное предложение;
-- `survey mode (опросный режим)` для генерации ответов на опросные вопросы.
+Репозиторий для генерации синтетических персон и запуска `survey pipeline (опросного пайплайна)`.
 
-Текущий основной инженерный результат в репозитории — `structured survey mode (структурированный survey-режим)`. Он работает через явные `voices (голоса)`, кодовую агрегацию и поддерживает подключение `news context (новостного контекста)`.
+Текущий основной инженерный результат в этой ветке:
+- `structured survey mode (структурированный survey-режим)`;
+- поддержка внешнего `news context (новостного контекста)` через `JSON snapshot (JSON-снимок)`;
+- `survey benchmark (survey-бенчмарк)` для сравнения `legacy (старого режима)` и `structured (структурированного режима)`.
 
-## Что есть в репозитории
+## Ключевые файлы
 
 - `main.py` — главный `CLI entrypoint (интерфейс командной строки)`.
 - `src/orchestration.py` — сборка полного пайплайна.
-- `src/core/simulation_manager.py` — маршрутизация в `credit` или `survey` режим.
-- `src/agents/structured_survey_reasoner.py` — новый `structured survey runtime (структурированный survey-рантайм)`.
-- `src/agents/survey_news_adapter.py` — `news adapter (адаптер новостного контекста)` для survey.
-- `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных news JSON.
-- `scripts/benchmarks/benchmark_survey_reasoning.py` — основной `survey benchmark (survey-бенчмарк)`.
+- `src/core/simulation_manager.py` — запуск симуляций и выбор `survey mode (survey-режима)`.
+- `src/agents/survey_agent.py` — `legacy survey runtime (старый survey-рантайм)`.
+- `src/agents/structured_survey_reasoner.py` — `structured survey runtime (структурированный survey-рантайм)`.
+- `src/agents/survey_news_adapter.py` — адаптация `news context (новостного контекста)` к вопросам опроса.
+- `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных `news JSON (news JSON-файлов)`.
+- `scripts/benchmarks/benchmark_survey_reasoning.py` — `survey benchmark (survey-бенчмарк)`.
 
-## Зависимости и окружение
+## Окружение
 
 Рекомендуемая среда:
 - `Python 3.12`
-- `.env` с переменными:
-  - `OPENAI_API_KEY`
-  - `YANDEX_FOLDER_ID`
+- `.env` с:
+  - `YANDEX_API_KEY` — предпочтительно;
+  - `YANDEX_FOLDER_ID`.
+
+Для обратной совместимости код также принимает `OPENAI_API_KEY` как имя переменной для ключа, но в общей ветке лучше использовать `YANDEX_API_KEY`.
 
 Установка:
 
@@ -32,9 +36,19 @@ source .venv312/bin/activate
 pip install -r requirements.txt
 ```
 
-## Быстрый запуск survey-пайплайна
+## Данные через DVC
 
-### Рекомендуемый режим: structured survey
+`main (главная ветка)` уже перевела часть данных в `DVC (систему версионирования данных)`, поэтому перед запуском нужно либо иметь локальные файлы, либо подтянуть их:
+
+```bash
+dvc pull data/evidence.json.dvc data/survey_questions.json.dvc data/Nemotron.dvc data/Synthetic.dvc
+```
+
+Если планируется работа с дополнительными датасетами, можно подтянуть и остальные `.dvc`-файлы из `data/` и `data_4_qdrant/`.
+
+## Быстрый запуск
+
+Рекомендуемый режим по умолчанию — `structured survey mode (структурированный survey-режим)`.
 
 ```bash
 source .venv312/bin/activate
@@ -47,23 +61,34 @@ python main.py \
   --timeout 60
 ```
 
-Что делает этот запуск:
-- загружает `evidence (описание аудиторий)` из `data/evidence.json`;
+Этот запуск:
+- загружает `evidence (описание аудиторий)`;
 - генерирует или фильтрует персоны;
 - загружает вопросы из `data/survey_questions.json`;
 - прогоняет для каждой персоны `structured survey reasoner (структурированный survey-рантайм)`;
-- сохраняет `profile_*.json`, `survey_summary.json` и остальные артефакты в `outputs/`.
+- сохраняет профили и агрегированные результаты в `outputs/`.
 
-### Старый режим: legacy survey
+## Режимы survey
+
+### Structured
 
 ```bash
-source .venv312/bin/activate
-python main.py \
-  --agent_mode survey \
-  --survey-mode legacy
+python main.py --agent_mode survey --survey-mode structured
 ```
 
-Этот режим нужен в основном для сравнения с `structured survey mode (структурированным survey-режимом)`.
+Это основной режим. Он использует:
+- явные `voices (голоса)`;
+- кодовую агрегацию;
+- `resolver (разрешитель конфликта)`;
+- поддержку `news context (новостного контекста)`.
+
+### Legacy
+
+```bash
+python main.py --agent_mode survey --survey-mode legacy
+```
+
+Этот режим нужен в основном как `baseline (базовый режим)` для сравнения с `structured (структурированным режимом)`.
 
 ## Подключение news context
 
@@ -76,7 +101,6 @@ python main.py \
 Пример запуска:
 
 ```bash
-source .venv312/bin/activate
 python main.py \
   --agent_mode survey \
   --survey-mode structured \
@@ -85,21 +109,19 @@ python main.py \
 
 Важно:
 - `main.py` принимает только один `news context file (файл новостного контекста)` на запуск;
-- если в наборе персон смешаны `mothers` и `fathers`, то один и тот же контекст будет точнее для одной аудитории и слабее для другой;
-- для строгой оценки эффекта новостей лучше запускать `survey benchmark (survey-бенчмарк)` отдельно по аудиториям.
+- если в наборе персон смешаны `mothers (матери)` и `fathers (отцы)`, один контекст будет точнее для одной аудитории и слабее для другой;
+- для строгой оценки влияния новостей лучше запускать `benchmark (бенчмарк)` отдельно по аудиториям.
 
 ## Основные флаги
 
-- `--agent_mode credit|survey`
-  - выбирает общий режим пайплайна.
+- `--agent_mode survey|credit`
+  - общий режим пайплайна; в этой ветке основной рабочий путь — `survey`.
 - `--survey-mode legacy|structured`
-  - выбирает старый или новый survey runtime.
-- `--decision-mode direct|compact_debate`
-  - режим кредитного рассуждения для `credit mode (кредитного режима)`.
+  - выбор между старым и новым `survey runtime (survey-рантаймом)`.
 - `--news-context-path PATH`
-  - путь к входному `news context JSON (news context JSON-файлу)` для `structured survey` или `compact_debate`.
+  - путь к входному `news JSON (news JSON-файлу)`.
 - `--evidence PATH`
-  - путь к `evidence JSON (evidence JSON-файлу)` с описанием целевых аудиторий.
+  - путь к `evidence JSON (evidence JSON-файлу)`.
 - `--output PATH`
   - директория сохранения результатов.
 - `--concurrency N`
@@ -107,13 +129,13 @@ python main.py \
 - `--timeout SECONDS`
   - таймаут на одну персону.
 - `--no-pgm`
-  - использовать не PGM-генерацию, а фильтрацию реальных данных.
+  - отключает `PGM generation (PGM-генерацию)`.
 - `--no-oceanflag`
-  - отключить перенос `OCEAN traits (личностных черт OCEAN)`.
+  - отключает расчет `OCEAN traits (личностных черт OCEAN)`.
 
 ## Survey benchmark
 
-Для воспроизводимого сравнения `legacy vs structured (старого и нового режима)` и `with news vs without news (с новостями и без новостей)` используй:
+Для воспроизводимого сравнения `legacy vs structured (старого и нового режима)` и `with news vs without news (с новостями и без новостей)`:
 
 ```bash
 source .venv312/bin/activate
@@ -134,7 +156,6 @@ python scripts/benchmarks/benchmark_survey_reasoning.py \
 Пример с новостным контекстом:
 
 ```bash
-source .venv312/bin/activate
 python scripts/benchmarks/benchmark_survey_reasoning.py \
   --profiles-glob "outputs/profile_*.json" \
   --profile-sample 10 \
@@ -156,19 +177,8 @@ python scripts/benchmarks/benchmark_survey_reasoning.py \
 - `judge_results.csv`
 - `manifest.json`
 
-## Credit mode
+## Что не входит в основной пайплайн
 
-`credit mode (кредитный режим)` остается доступным:
-
-```bash
-source .venv312/bin/activate
-python main.py \
-  --agent_mode credit \
-  --decision-mode compact_debate
-```
-
-При необходимости туда тоже можно передать `--news-context-path`, но основной финальный результат в репозитории сейчас связан именно с `structured survey mode (структурированным survey-режимом)`.
-
-## Что не входит в основной merge
-
-Внешний генератор `news context (новостного контекста)` из папки `multi_agent_rag/` не является частью основного пайплайна этого репозитория. В основной код здесь перенесена только совместимость с его `JSON outputs (JSON-выходами)` и примеры готовых `news snapshots (снимков новостного контекста)` для текущих аудиторий.
+Внешний генератор `news context (новостного контекста)` из папки `multi_agent_rag/` не является частью основного пайплайна этого репозитория. В эту ветку перенесена только:
+- совместимость с его `JSON outputs (JSON-выходами)`;
+- поддержка готовых `news snapshots (снимков новостного контекста)`.
