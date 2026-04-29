@@ -8,14 +8,17 @@ import logging
 import time
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, AsyncIterator, NamedTuple
 
+import aiosqlite
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
-from src.meta_agent.config import CHECKPOINT_DB_PATH
+from src.meta_agent.configs import CHECKPOINT_DB_PATH
 from src.meta_agent.nodes import analyzer_node, code_writer_node, data_extractor_node, supervisor_node
 from src.meta_agent.utils.state import MetaAgentState, build_turn_state_update
 from src.meta_agent.utils.history import (
@@ -24,6 +27,7 @@ from src.meta_agent.utils.history import (
 from src.meta_agent.utils.routing import route_analyzer, route_supervisor
 
 logger = logging.getLogger("meta_agent")
+DTO_PAYLOAD_MSGPACK_MODULE = ("src.meta_agent.dto", "DtoPayload")
 
 
 class MetaAgentResult(NamedTuple):
@@ -45,11 +49,19 @@ class MetaAgentGraphManager:
     async def _initialize_graph(self) -> None:
         """Инициализирует checkpointer и граф один раз."""
         self._checkpoint_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(self._checkpoint_db_path))
+        self._checkpointer_cm = self._open_checkpointer()
         self._checkpointer = await self._checkpointer_cm.__aenter__()
         await self._checkpointer.setup()
 
         self._graph = self._build_graph(self._checkpointer)
+
+    @asynccontextmanager
+    async def _open_checkpointer(self) -> AsyncIterator[AsyncSqliteSaver]:
+        serde = JsonPlusSerializer(
+            allowed_msgpack_modules=[DTO_PAYLOAD_MSGPACK_MODULE]
+        )
+        async with aiosqlite.connect(str(self._checkpoint_db_path)) as conn:
+            yield AsyncSqliteSaver(conn, serde=serde)
 
     def _build_graph(self, checkpointer: AsyncSqliteSaver):
         """Собрать и скомпилировать граф с SQLite checkpointer-ом.
@@ -131,7 +143,7 @@ class MetaAgentGraphManager:
         state_update = build_turn_state_update(question, snapshot_values)
         return runnable_config, state_update
 
-    async def _finalize_invoke(self, runnable_config: RunnableConfig, result: Any, question: str) -> str:
+    async def _finalize_invoke(self, runnable_config: RunnableConfig, result: Any) -> str:
         """Сохраняет обновлённую историю после выполнения графа и возвращает ответ.
 
         Использует aupdate_state. Редьюсер history обрабатывает добавление.
@@ -156,7 +168,7 @@ class MetaAgentGraphManager:
 
         graph = await self.get_graph()
         result = await graph.ainvoke(state_update, runnable_config)
-        answer = await self._finalize_invoke(runnable_config, result, question)
+        answer = await self._finalize_invoke(runnable_config, result)
 
         elapsed = time.perf_counter() - t0
         logger.info("Граф завершён за %.1fс", elapsed)

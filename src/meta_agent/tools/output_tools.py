@@ -2,6 +2,12 @@
 
 Каждый инструмент завершает цикл агента, выставляя context.state и
 context.execution_result, после чего возвращает валидированный JSON-пейлоад.
+
+IMPORTANT: Output tools (SupervisorDecisionTool, DataExtractionReportTool, 
+CodeExecutionReportTool, AnalyzerDecisionTool) return Pydantic model JSON directly 
+without the "success": true wrapper. This is intentional — they are structured report 
+tools that complete agent cycles, not regular tools. The "success": true wrapper is 
+only used by regular tools (execute_code, compute_stats, etc.) via serialize_tool_result().
 """
 
 from __future__ import annotations

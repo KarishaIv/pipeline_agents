@@ -10,11 +10,13 @@ import logging
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 import httpx
-from openai import OpenAI
 from pydantic import BaseModel
 import re
 import uuid
 import uuid6
+
+from langsmith.wrappers import wrap_openai
+from openai import AsyncOpenAI, OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,23 @@ persona_characteristics = [
     "neuroticism",
     "data_source",
 ]
+
+def make_openai_client(api_key: str | None = None) -> AsyncOpenAI:
+    """Создать AsyncOpenAI-клиент и, при включённом tracing, обернуть его для LangSmith."""
+    api_key = api_key if api_key is not None else os.getenv("YANDEX_API_KEY", "")
+    client = AsyncOpenAI(api_key=api_key, base_url=YANDEX_BASE_URL)
+    if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
+        client = wrap_openai(client)
+    return client
+
+
+def make_openai_sync_client(api_key: str | None = None) -> OpenAI:
+    """Создать синхронный OpenAI-клиент и, при включённом tracing, обернуть его для LangSmith."""
+    api_key = api_key if api_key is not None else os.getenv("YANDEX_API_KEY", "")
+    client = OpenAI(api_key=api_key, base_url=YANDEX_BASE_URL)
+    if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
+        client = wrap_openai(client)
+    return client
 
 def _get_text_from_response(response) -> str:
     """Универсальная функция для получения текста из ответа LLM"""
@@ -105,10 +124,7 @@ def _parse_json_from_response(text: str) -> dict:
 
 def _sync_llm_call(prompt: str, model_uri: str, temperature: float) -> str:
     """Synchronous single-turn call to Yandex GPT via OpenAI-compatible endpoint."""
-    client = OpenAI(
-        api_key=os.getenv("YANDEX_API_KEY"),
-        base_url=YANDEX_BASE_URL,
-    )
+    client = make_openai_sync_client()
     response = client.chat.completions.create(
         model=model_uri,
         messages=[{"role": "user", "content": prompt}],

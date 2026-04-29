@@ -6,14 +6,14 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from langsmith.wrappers import wrap_openai
-from openai import AsyncOpenAI
-
 from sgr_agent_core import AgentConfig
 from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 
 from config import get_model_uri, YANDEX_BASE_URL
-from src.meta_agent.config import MAX_AGENT_ITERATIONS
+from src.meta_agent.configs import MAX_AGENT_ITERATIONS
+from src.meta_agent.utils.json_responses import json_error
+from src.utils import make_openai_client
+
 logger = logging.getLogger("meta_agent")
 
 
@@ -37,15 +37,6 @@ def _safe_get_custom_context(agent: Any | None) -> dict[str, Any] | None:
     except Exception as e:  # noqa: BLE001
         logger.debug("Failed to extract custom_context from agent: %s", e)
     return None
-
-
-def make_openai_client(api_key: str | None = None) -> AsyncOpenAI:
-    """Создать AsyncOpenAI-клиент и, при включённом tracing, обернуть его для LangSmith."""
-    api_key = api_key if api_key is not None else os.getenv("YANDEX_API_KEY", "")
-    client = AsyncOpenAI(api_key=api_key, base_url=YANDEX_BASE_URL)
-    if os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true":
-        client = wrap_openai(client)
-    return client
 
 
 def make_agent(
@@ -89,7 +80,7 @@ def _unwrap(result: Any) -> str:
             "Agent returned None (likely no tool_call selected or "
             "model failed to produce valid tool call response). "
         )
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
+        return json_error(error_msg, error_type="agent_error")
 
     if isinstance(result, str):
         return result
@@ -109,7 +100,11 @@ async def run_agent(
     model: str | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> AgentRunResult:
-    """Simple run_agent
+    """Run an LLM agent with tools and return structured result.
+
+    Creates agent via make_agent(), executes it, unwraps output,
+    and captures custom context. On error, returns JSON error string
+    as output (for node fallback handling) while preserving context.
     """
     agent = make_agent(
         task,
@@ -126,7 +121,9 @@ async def run_agent(
         return AgentRunResult(output=output, context=context)
     except Exception as exc:
         logger.exception("Agent '%s' failed", name)
-        # Return error as output for nodes to handle via fallback (simplification)
-        error_output = json.dumps({"error": str(exc)}, ensure_ascii=False)
+
+        # Return JSON error string as output (nodes handle via fallback logic)
+        error_output = json_error(str(exc), error_type="agent_exception")
         context = _safe_get_custom_context(agent) or initial_custom_context
+        
         return AgentRunResult(output=error_output, context=context)

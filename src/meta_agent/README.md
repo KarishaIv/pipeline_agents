@@ -123,20 +123,27 @@ uvicorn src.scripts.serve_meta_agent:app --host 0.0.0.0 --port 8000
 
 После старта будет доступен endpoint:
 
-- `GET /ask`
+- `POST /ask` (основной, рекомендуемый)
 
 Пример запроса:
 
 ```bash
-curl "http://127.0.0.1:8000/ask?q=Какие сегменты чаще соглашаются на кредит?"
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Какие сегменты чаще соглашаются на кредит?"}'
 ```
 
 Пример ответа:
 
 ```json
 {
-  "answer": "...",
-  "thread_id": "0195f3d1-...."
+  "thread_id": "0195f3d1-...",
+  "outputs": [
+    {
+      "type": "text",
+      "text": "На основе анализа данных..."
+    }
+  ]
 }
 ```
 
@@ -144,15 +151,116 @@ curl "http://127.0.0.1:8000/ask?q=Какие сегменты чаще согл�
 
 Параметр `thread_id` управляет историей диалога:
 
-- `thread_id=-1` - начать новую сессию;
-- `thread_id=<existing-id>` - продолжить конкретную сессию;
-- без `thread_id` - будет создан новый идентификатор на стороне сервиса.
+- `thread_id=null` или отсутствует — начать новую сессию;
+- `thread_id=-1` — явно начать новую сессию;
+- `thread_id=<existing-id>` — продолжить конкретную сессию.
 
 Пример продолжения диалога:
 
 ```bash
-curl "http://127.0.0.1:8000/ask?q=А теперь только по молодежной аудитории&thread_id=<thread-id>"
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "А теперь только по молодежной аудитории", "thread_id": "<thread-id>"}'
 ```
+
+## Telegram Bot
+
+Боты запускается как отдельный процесс, использует long polling и вызывает API `/ask`.
+
+### Установка и конфигурация
+
+1. Создайте Telegram бота через [@BotFather](https://t.me/botfather) и получите токен.
+
+2. Добавьте конфигурацию в `.env`:
+
+```dotenv
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
+META_AGENT_API_URL=http://localhost:8000
+TELEGRAM_POLL_TIMEOUT=30
+TELEGRAM_REQUEST_TIMEOUT=60
+TELEGRAM_SESSION_DB_PATH=data/telegram_sessions.sqlite3
+TELEGRAM_THREAD_SCOPE=chat
+```
+
+### Запуск бота
+
+Из корня репозитория (убедитесь, что API работает на http://localhost:8000):
+
+```bash
+python3 -m src.scripts.serve_telegram_bot
+```
+
+### Команды бота
+
+- `/start` — начать диалог, показать справку
+- `/help` — справка по использованию
+- `/new [name]` — создать новую сессию (по умолчанию: session_1, session_2, ...)
+- `/sessions` — показать список всех сессий
+- `/switch <name>` — переключиться на другую сессию
+- `/delete <name>` — удалить сессию
+
+### Управление сессиями
+
+Бот поддерживает **несколько сессий** для каждого пользователя:
+
+- Каждая сессия — это отдельный диалог с meta-agent со своей историей
+- Вы можете создавать, переключаться и удалять сессии
+- Одна сессия всегда активна (помечена 🟢)
+- Все сообщения идут в активную сессию
+
+### Примеры использования
+
+1. **Начать новый диалог:**
+   ```
+   /new work_analysis
+   ```
+   Создаст сессию с именем "work_analysis" и сделает её активной.
+
+2. **Задать вопрос:**
+   ```
+   Какие сегменты клиентов чаще всего берут кредит?
+   ```
+   Сообщение попадёт в активную сессию, бот сохранит контекст.
+
+3. **Создать ещё одну сессию для другой темы:**
+   ```
+   /new personal_finance
+   ```
+
+4. **Посмотреть все сессии:**
+   ```
+   /sessions
+   ```
+   Покажет список:
+   ```
+   🟢 personal_finance (updated: 2026-04-28 12:00)
+   ⚪️ work_analysis (updated: 2026-04-28 11:30)
+   ```
+
+5. **Переключиться на другую сессию:**
+   ```
+   /switch work_analysis
+   ```
+   Теперь все сообщения будут в сессии "work_analysis".
+
+6. **Удалить ненужную сессию:**
+   ```
+   /delete old_session
+   ```
+   Нельзя удалить активную сессию — сначала переключитесь на другую.
+
+### Архитектура
+
+- Бот использует **long polling** (не требует webhook).
+- **Множественные сессии**: каждый пользователь может иметь несколько параллельных диалогов (сессий).
+- Каждая сессия имеет уникальное имя и привязана к своему `thread_id` в meta-agent.
+- Одна сессия всегда активна — все сообщения идут в неё.
+- Все сообщения обрабатываются по очереди (per-chat lock).
+- Длинные ответы автоматически разбиваются на несколько сообщений.
+- Будущие расширения поддерживают JSON и файловые выходы (PDF, графики).
+
+
 
 ## Что находится внутри `meta_agent`
 
@@ -199,19 +307,28 @@ Qdrant-инструменты возвращают ошибки:
 
 All test logic is located in `src/meta_agent/test/` (per project requirements).
 
+The project includes a `Makefile` with convenient commands. The pytest configuration (`pythonpath = [".", "src"]`) has been aligned so that imports of the form `from src.meta_agent...` work when running from the project root.
+
 Run tests with:
 
 ```bash
-# Install test deps
+# Install test deps (once)
 uv sync --extra test
 
-# Run full test suite with coverage
-uv run pytest src/meta_agent/test -q --cov=src/meta_agent --cov-report=term-missing
+# Preferred: run meta_agent tests
+make test-meta
+# or
+make test
 
-# Or specific modules
+# With coverage report
+make test-cov
+
+# Specific modules
 uv run pytest src/meta_agent/test/test_utils.py -q
 uv run pytest src/meta_agent/test/tools/ -q
 ```
+
+See `Makefile` for `test`, `test-cov`, `lint`, `format` targets.
 
 - **Coverage target**: >80% for utils, tools, nodes, graph.
 - Uses `pytest`, `pytest-asyncio`, `pytest-mock`.

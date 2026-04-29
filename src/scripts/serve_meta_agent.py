@@ -36,9 +36,16 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException
 
-from src.meta_agent import meta_graph_manager
+from src.meta_agent import (
+    AskRequest,
+    MetaAgentApiResponse,
+    TextOutput,
+    meta_graph_manager,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -50,13 +57,40 @@ async def app_lifespan(_: FastAPI):
 app = FastAPI(title="Meta Agent API", lifespan=app_lifespan)
 
 
-@app.get("/ask")
-async def ask(
-    q: str = Query(..., description="Вопрос для мета-агента"),
-    thread_id: str | None = Query(
-        default=None,
-        description="Идентификатор сессии: null — продолжить предыдущую, -1 — начать новую, иначе — использовать переданный",
-    ),
-):
-    out = await meta_graph_manager.invoke_graph_session(q, thread_id)
-    return {"answer": out.answer, "thread_id": out.thread_id}
+@app.post("/ask")
+async def ask_json(request: AskRequest) -> MetaAgentApiResponse:
+    """Ask the meta-agent a question via structured JSON request.
+
+    Args:
+        request: AskRequest containing question and optional thread_id.
+
+    Returns:
+        MetaAgentApiResponse with thread_id and list of outputs (primarily text for MVP).
+
+    Raises:
+        HTTPException: On LLM, Qdrant, or graph execution errors.
+    """
+    try:
+        result = await meta_graph_manager.invoke_graph_session(
+            request.question, request.thread_id
+        )
+        # MVP: wrap the answer as a single text output
+        outputs = [TextOutput(text=result.answer)]
+        return MetaAgentApiResponse(thread_id=result.thread_id, outputs=outputs)
+    except Exception as e:
+        logger.exception("Error in /ask endpoint")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        ) from e
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "src.scripts.serve_meta_agent:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+    )

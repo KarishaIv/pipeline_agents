@@ -14,16 +14,18 @@ import traceback
 from datetime import datetime
 from typing import List, Literal, TYPE_CHECKING
 
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from openai import AsyncOpenAI
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
-from config import YANDEX_BASE_URL, get_model_uri
-from src.meta_agent.config import CHARTS_DIR
+from config import get_model_uri
+from src.utils import make_openai_client
+from src.meta_agent.configs import CHARTS_DIR
 from src.meta_agent.tools.dto_tools import dto_summary_view, resolve_dto_or_error
+from src.meta_agent.utils.json_responses import json_error, serialize_tool_result
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
@@ -48,7 +50,7 @@ class ComputeStatsTool(BaseTool):
     reasoning: str = Field(description="Зачем нужны эти показатели")
     dto_name: str = Field(description="Имя DTO для анализа")
     columns: List[str] = Field(
-        default=[],
+        default_factory=list,
         description=(
             "Какие числовые столбцы анализировать. "
             "Пустой список — все числовые столбцы."
@@ -67,7 +69,7 @@ class ComputeStatsTool(BaseTool):
 
             numeric = df.select_dtypes(include="number")
             if numeric.empty:
-                return json.dumps({"error": "Числовые столбцы не найдены"}, ensure_ascii=False)
+                return json_error("Числовые столбцы не найдены", error_type="validation_error")
 
             result = {
                 "dto": dto_summary_view(self.dto_name, dto_payload),
@@ -81,10 +83,10 @@ class ComputeStatsTool(BaseTool):
                     else {}
                 ),
             }
-            return json.dumps(result, ensure_ascii=False, default=str)
+            return serialize_tool_result(result)
 
         except Exception as exc:
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+            return json_error(str(exc), error_type="computation_error")
 
 
 class CreateChartTool(BaseTool):
@@ -106,11 +108,107 @@ class CreateChartTool(BaseTool):
     x_label: str = Field(default="", description="Подпись оси X")
     y_label: str = Field(default="", description="Подпись оси Y")
 
+    def _validate_chart_inputs(self, df: pd.DataFrame) -> str | None:
+        """Validate chart inputs and return error JSON if invalid, None if OK."""
+        if df.empty:
+            return json_error("DTO пуст или содержит 0 строк", error_type="validation_error")
+
+        numeric_cols = set(df.select_dtypes(include="number").columns)
+
+        if self.chart_type == "scatter":
+            if len(numeric_cols) < 2 and (not self.x_column or not self.y_column):
+                return json_error(
+                    "Для scatter нужны минимум два числовых столбца или явно указанные x_column и y_column",
+                    error_type="validation_error",
+                )
+            if self.x_column and self.x_column not in df.columns:
+                return json_error(
+                    f"Столбец '{self.x_column}' не найден в DTO",
+                    error_type="validation_error",
+                )
+            if self.y_column and self.y_column not in df.columns:
+                return json_error(
+                    f"Столбец '{self.y_column}' не найден в DTO",
+                    error_type="validation_error",
+                )
+
+        elif self.chart_type == "histogram":
+            if not numeric_cols and not self.x_column:
+                return json_error(
+                    "Для histogram нужен числовой столбец",
+                    error_type="validation_error",
+                )
+            if self.x_column and self.x_column not in df.columns:
+                return json_error(
+                    f"Столбец '{self.x_column}' не найден в DTO",
+                    error_type="validation_error",
+                )
+
+        elif self.chart_type == "bar" or self.chart_type == "line":
+            if self.x_column and self.x_column not in df.columns:
+                return json_error(
+                    f"Столбец '{self.x_column}' не найден в DTO",
+                    error_type="validation_error",
+                )
+            if self.y_column and self.y_column not in df.columns:
+                return json_error(
+                    f"Столбец '{self.y_column}' не найден в DTO",
+                    error_type="validation_error",
+                )
+
+        elif self.chart_type == "pie":
+            if len(df.columns) < 1:
+                return json_error(
+                    "DTO должен иметь минимум один столбец для pie",
+                    error_type="validation_error",
+                )
+            label_col = self.x_column if self.x_column else df.columns[0]
+            val_col = self.y_column if self.y_column else (df.columns[1] if len(df.columns) > 1 else df.columns[0])
+            if label_col not in df.columns:
+                return json_error(
+                    f"Столбец '{label_col}' не найден в DTO",
+                    error_type="validation_error",
+                )
+            if val_col not in df.columns:
+                return json_error(
+                    f"Столбец '{val_col}' не найден в DTO",
+                    error_type="validation_error",
+                )
+            if val_col not in numeric_cols:
+                return json_error(
+                    f"Столбец '{val_col}' должен содержать числовые значения для pie графика",
+                    error_type="validation_error",
+                )
+
+        elif self.chart_type == "box":
+            if not numeric_cols:
+                return json_error(
+                    "Для box plot нужны числовые столбцы",
+                    error_type="validation_error",
+                )
+            if self.y_column and self.y_column not in numeric_cols:
+                return json_error(
+                    f"Столбец '{self.y_column}' должен содержать числовые значения для box plot",
+                    error_type="validation_error",
+                )
+
+        elif self.chart_type == "heatmap":
+            if len(numeric_cols) < 2:
+                return json_error(
+                    "Для heatmap нужны минимум два числовых столбца для корреляционной матрицы",
+                    error_type="validation_error",
+                )
+
+        return None
+
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         df, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
         if error:
             return error
         assert df is not None and dto_payload is not None
+
+        if validation_error := self._validate_chart_inputs(df):
+            return validation_error
 
         CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -132,16 +230,12 @@ class CreateChartTool(BaseTool):
 
                 case "scatter":
                     numeric_cols = list(df.select_dtypes(include="number").columns)
-                    if len(numeric_cols) < 2 and (not self.x_column or not self.y_column):
-                        return json.dumps({"error": "Для scatter нужны минимум два числовых столбца"}, ensure_ascii=False)
                     x_col = self.x_column or numeric_cols[0]
                     y_col = self.y_column or numeric_cols[1]
                     ax.scatter(df[x_col], df[y_col], alpha=0.7)
 
                 case "histogram":
                     numeric_cols = list(df.select_dtypes(include="number").columns)
-                    if not numeric_cols and not self.x_column:
-                        return json.dumps({"error": "Для histogram нужен числовой столбец"}, ensure_ascii=False)
                     col = self.x_column or numeric_cols[0]
                     ax.hist(df[col].dropna(), bins=20, edgecolor="white")
 
@@ -152,7 +246,7 @@ class CreateChartTool(BaseTool):
 
                 case "box":
                     cols = [self.y_column] if self.y_column else list(df.select_dtypes(include="number").columns)
-                    ax.boxplot([df[c].dropna().tolist() for c in cols], labels=cols)
+                    ax.boxplot([df[c].dropna().tolist() for c in cols], tick_labels=cols)
 
                 case "heatmap":
                     numeric = df.select_dtypes(include="number")
@@ -176,21 +270,19 @@ class CreateChartTool(BaseTool):
             plt.savefig(path, bbox_inches="tight", dpi=150)
             plt.close(fig)
 
-            return json.dumps(
-                {
-                    "chart_saved": path,
-                    "title": self.title,
-                    "type": self.chart_type,
-                    "dto": dto_summary_view(self.dto_name, dto_payload),
-                },
-                ensure_ascii=False,
-            )
+            return serialize_tool_result({
+                "chart_saved": path,
+                "title": self.title,
+                "type": self.chart_type,
+                "dto": dto_summary_view(self.dto_name, dto_payload),
+            })
 
         except Exception as exc:
             plt.close("all")
-            return json.dumps(
-                {"error": str(exc), "traceback": traceback.format_exc()},
-                ensure_ascii=False,
+            return json_error(
+                str(exc),
+                error_type="chart_rendering_error",
+                details={"traceback": traceback.format_exc()},
             )
 
 
@@ -213,7 +305,7 @@ class SummarizeTextsTool(BaseTool):
         description="Имя DTO, из которого извлекаются тексты",
     )
     text_columns: List[str] = Field(
-        default=[],
+        default_factory=list,
         description=(
             "Список колонок DTO, содержащих текст. "
             "Если пусто, берутся все строковые колонки."
@@ -270,7 +362,10 @@ class SummarizeTextsTool(BaseTool):
                     texts.append(row_json)
 
         if not texts:
-            return json.dumps({"error": f"В DTO '{self.dto_name}' не найдено текстов для резюме"}, ensure_ascii=False)
+            return json_error(
+                f"В DTO '{self.dto_name}' не найдено текстов для резюме",
+                error_type="validation_error",
+            )
 
         numbered = "\n\n".join(
             f"[{i + 1}] {t.strip()}" for i, t in enumerate(texts) if t.strip()
@@ -281,10 +376,7 @@ class SummarizeTextsTool(BaseTool):
         )
 
         try:
-            client = AsyncOpenAI(
-                api_key=os.getenv("YANDEX_API_KEY", ""),
-                base_url=YANDEX_BASE_URL,
-            )
+            client = make_openai_client()
             response = await client.chat.completions.create(
                 model=get_model_uri(),
                 messages=[{"role": "user", "content": user_message}],
@@ -292,16 +384,13 @@ class SummarizeTextsTool(BaseTool):
                 temperature=0.3,
             )
             summary = response.choices[0].message.content or ""
-            return json.dumps(
-                {
-                    "summary": summary,
-                    "texts_count": len(texts),
-                    "dto": dto_summary_view(self.dto_name, dto_payload, 50),
-                    "text_columns": columns,
-                    "instruction": self.instruction,
-                },
-                ensure_ascii=False,
-            )
+            return serialize_tool_result({
+                "summary": summary,
+                "texts_count": len(texts),
+                "dto": dto_summary_view(self.dto_name, dto_payload, 50),
+                "text_columns": columns,
+                "instruction": self.instruction,
+            })
         except Exception as exc:
             logger.warning("SummarizeTextsTool завершился ошибкой: %s", exc)
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+            return json_error(str(exc), error_type="llm_error")

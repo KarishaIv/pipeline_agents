@@ -4,9 +4,14 @@ Pydantic-модель MetaAgentState с аннотированными редь�
 Включает build_turn_state_update для подготовки обновлений перед вызовом графа.
 """
 
+import logging
 from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
+
+from src.meta_agent.dto import DtoPayload
+
+logger = logging.getLogger(__name__)
 
 
 def append_history(left: list[dict], right: list[dict] | dict | None) -> list[dict]:
@@ -26,11 +31,35 @@ def append_history(left: list[dict], right: list[dict] | dict | None) -> list[di
     return left or []
 
 
-def merge_dto_store(left: dict[str, dict], right: dict[str, dict] | None) -> dict[str, dict]:
-    """Редьюсер для dto_store: объединяет новые DTO (последний побеждает при конфликте ключей)."""
+def merge_dto_store(
+    left: dict[str, DtoPayload], right: dict[str, DtoPayload] | None
+) -> dict[str, DtoPayload]:
+    """Редьюсер для dto_store: объединяет новые DTO (последний побеждает при конфликте ключей).
+    
+    Ensures that all values in the merged store are DtoPayload objects. This handles
+    the case where right-side values (from node state updates) are dicts that need
+    to be converted to DtoPayload instances.
+    
+    Raises ValueError if a dict cannot be converted to DtoPayload (indicates malformed data).
+    """
     merged = dict(left) if left else {}
     if isinstance(right, dict):
-        merged.update(right)
+        for key, value in right.items():
+            if isinstance(value, dict) and not isinstance(value, DtoPayload):
+                try:
+                    merged[key] = DtoPayload(**value)
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        "Failed to convert dto_store[%r] to DtoPayload: %s. "
+                        "This indicates malformed DTO data in state update.",
+                        key, e
+                    )
+                    raise ValueError(
+                        f"Cannot convert dto_store[{key!r}] to DtoPayload: {e}. "
+                        "All DTO values must be valid DtoPayload objects."
+                    ) from e
+            else:
+                merged[key] = value
     return merged
 
 
@@ -47,9 +76,9 @@ class MetaAgentState(BaseModel):
         default_factory=list
     )  # [{"role": str, "content": str}]
 
-    dto_store: Annotated[dict[str, dict[str, Any]], merge_dto_store] = Field(
+    dto_store: Annotated[dict[str, DtoPayload], merge_dto_store] = Field(
         default_factory=dict
-    )  # {dto_name: dto_payload}
+    )  # {dto_name: DtoPayload}
 
     next_worker: str = Field(default="")
     current_task: str = Field(default="")

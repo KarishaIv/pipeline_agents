@@ -9,8 +9,8 @@ from typing import Any
 from langsmith import traceable
 
 from config import get_model_uri
-from src.meta_agent.agent_factory import make_openai_client
-from src.meta_agent.config import (
+from src.utils import make_openai_client
+from src.meta_agent.configs import (
     HISTORY_SUMMARY_MAX_TOKENS,
     HISTORY_SUMMARY_MODEL,
     MAX_HISTORY_CHARS,

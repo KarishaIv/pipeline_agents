@@ -5,3 +5,4 @@
 /survey_evidence.json
 /survey_questions.json
 /meta_agent_checkpoints.sqlite3
+/telegram_sessions.sqlite3

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from qdrant_client import QdrantClient, models
 
-from src.meta_agent.catalog import CollectionName
+from src.meta_agent.configs import CollectionName, QDRANT_HOST, QDRANT_PORT
 from src.utils import get_embedding
 
 
@@ -23,10 +23,8 @@ class QdrantService:
     _instance: QdrantService | None = None
 
     def __new__(cls) -> "QdrantService":
-        """Singleton pattern."""
+        """Return the singleton instance, creating it on first call."""
         if cls._instance is None:
-            from src.meta_agent.config import QDRANT_HOST, QDRANT_PORT
-
             cls._instance = super().__new__(cls)
             cls._instance.client = QdrantClient(
                 host=QDRANT_HOST,

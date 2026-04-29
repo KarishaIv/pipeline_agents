@@ -1,4 +1,4 @@
-from src.utils import robust_llm_call
+from utils import robust_llm_call
 import json
 import logging
 from typing import Any, Dict, List, Optional, Literal, TypedDict
@@ -692,7 +692,12 @@ class MultiAgentReasoner:
         return graph.compile()
 
     async def _run_agent_node(self, state: GraphState) -> GraphState:
-        """Generic node to run any reasoning agent"""
+        """Run the current_agent from state and update its history key.
+
+        Reads current_agent, scenario, persona_context from state;
+        calls agent.run(), then appends reasoning+reaction to the
+        corresponding *_history list and returns updated state.
+        """
         agent_name = state["current_agent"]
         agent = self.agents[agent_name]
         

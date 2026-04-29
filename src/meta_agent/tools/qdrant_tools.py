@@ -4,7 +4,6 @@ QdrantService — singleton.
 """
 
 from __future__ import annotations
-import json
 import logging
 from typing import TYPE_CHECKING, List, Optional
 
@@ -15,9 +14,10 @@ if TYPE_CHECKING:
     from sgr_agent_core.agent_definition import AgentConfig
     from sgr_agent_core.models import AgentContext
 
-from src.meta_agent.catalog import CollectionName, COLLECTION_ENUM_DESC
+from src.meta_agent.configs import CollectionName, COLLECTION_ENUM_DESC
 from src.meta_agent.services.qdrant import QdrantService
 from src.meta_agent.tools.dto_tools import dto_summary_view, register_dto
+from src.meta_agent.utils.json_responses import json_error, serialize_tool_result
 
 logger = logging.getLogger("meta_agent.qdrant")
 
@@ -25,20 +25,20 @@ logger = logging.getLogger("meta_agent.qdrant")
 def failure_payload(operation: str, exc: Exception | str | None = None) -> str:
     """Формирует JSON-ошибку для возврата из qdrant tools.
 
-    Перемещена из services.qdrant.py согласно требованиям.
-    Все ошибки (включая из QdrantService) обрабатываются здесь.
+    Все ошибки (включая из QdrantService) обрабатываются здесь
+    и возвращаются в стандартизированном формате JSON
+    с полями error, operation и detail.
+    
+    Wrapper for backward compatibility; use json_error directly in new code.
     """
     if isinstance(exc, str) or exc is None:
         exc = RuntimeError(str(exc) if exc else "unknown qdrant error")
     elif not isinstance(exc, Exception):
         exc = RuntimeError(str(exc))
-    return json.dumps(
-        {
-            "error": "ошибка_запроса_qdrant",
-            "operation": operation,
-            "detail": str(exc),
-        },
-        ensure_ascii=False,
+    return json_error(
+        f"Ошибка запроса к Qdrant: {operation}",
+        error_type="qdrant_error",
+        details={"operation": operation, "detail": str(exc)},
     )
 
 
@@ -68,7 +68,7 @@ class QdrantCollectionSchema(BaseTool):
         try:
             qdrant_service = get_qdrant_service()
             result = qdrant_service.get_collection_schema(self.collection)
-            return json.dumps(result, ensure_ascii=False, default=str)
+            return serialize_tool_result(result)
         except Exception as exc:
             logger.warning("Qdrant collection_schema завершился ошибкой: %s", exc)
             return failure_payload("collection_schema", exc)
@@ -105,7 +105,7 @@ class QdrantSearchTool(BaseTool):
                 summary_text=f"Поиск по {self.collection}: '{self.query[:60]}'",
                 meta={"vector_name": self.vector_name, "limit": self.limit},
             )
-            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
+            return serialize_tool_result(dto_summary_view(dto_name, dto_payload))
         except Exception as exc:
             logger.warning("Qdrant search завершился ошибкой: %s", exc)
             return failure_payload("search", exc)
@@ -139,7 +139,7 @@ class QdrantFilterTool(BaseTool):
                 summary_text=f"Фильтр {self.collection}: {self.field} == {self.value}",
                 meta={"field": self.field, "value": self.value, "limit": self.limit},
             )
-            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
+            return serialize_tool_result(dto_summary_view(dto_name, dto_payload))
         except Exception as exc:
             logger.warning("Qdrant filter_points завершился ошибкой: %s", exc)
             return failure_payload("filter_points", exc)
@@ -160,7 +160,7 @@ class QdrantScrollTool(BaseTool):
     limit: int = Field(default=10, description="Размер страницы")
     offset: Optional[str] = Field(default=None, description="Смещение из предыдущего scroll")
     payload_fields: List[str] = Field(
-        default=[],
+        default_factory=list,
         description="Список полей payload для возврата (пустой — все поля)",
     )
     filter_field: Optional[str] = Field(
@@ -191,7 +191,7 @@ class QdrantScrollTool(BaseTool):
                 summary_text=f"Scroll {self.collection} (limit={self.limit})",
                 meta={"limit": self.limit, "offset": self.offset},
             )
-            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
+            return serialize_tool_result(dto_summary_view(dto_name, dto_payload))
         except Exception as exc:
             logger.warning("Qdrant scroll_points завершился ошибкой: %s", exc)
             return failure_payload("scroll_points", exc)
@@ -212,7 +212,11 @@ class QdrantRetrieveTool(BaseTool):
             qdrant_service = get_qdrant_service()
 
             if not self.ids:
-                return json.dumps({"error": "ids_empty"}, ensure_ascii=False)
+                return json_error(
+                    "Список ID пуст",
+                    error_type="validation_error",
+                    details={"issue": "ids_empty"},
+                )
 
             result = qdrant_service.retrieve_by_id(self.collection, self.ids)
             dto_name, dto_payload = register_dto(
@@ -222,7 +226,7 @@ class QdrantRetrieveTool(BaseTool):
                 summary_text=f"retrieve_by_id {self.collection}: {len(self.ids)} id(s)",
                 meta={"ids_count": len(self.ids)},
             )
-            return json.dumps(dto_summary_view(dto_name, dto_payload), ensure_ascii=False, default=str)
+            return serialize_tool_result(dto_summary_view(dto_name, dto_payload))
         except Exception as exc:
             logger.warning("Qdrant retrieve_by_id завершился ошибкой: %s", exc)
             return failure_payload("retrieve_by_id", exc)

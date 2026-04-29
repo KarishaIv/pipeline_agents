@@ -23,20 +23,22 @@ def test_failure_payload():
     """Test standardized error JSON for Qdrant operations."""
     payload = failure_payload("search", "test error")
     data = json.loads(payload)
-    assert data["error"] == "ошибка_запроса_qdrant"
-    assert data["operation"] == "search"
-    assert "test error" in data["detail"]
+    assert data["success"] is False
+    assert data["error_type"] == "qdrant_error"
+    assert "search" in data["error"]
+    assert data["details"]["operation"] == "search"
+    assert "test error" in data["details"]["detail"]
 
     # Test with Exception
     exc = ValueError("bad query")
     payload2 = failure_payload("filter", exc)
     data2 = json.loads(payload2)
-    assert "bad query" in data2["detail"]
+    assert "bad query" in data2["details"]["detail"]
 
     # Non-exception
     payload3 = failure_payload("scroll", 123)
     data3 = json.loads(payload3)
-    assert "123" in data3["detail"]
+    assert "123" in data3["details"]["detail"]
 
 
 def test_get_qdrant_service(mock_qdrant_service):
@@ -135,8 +137,10 @@ async def test_collection_schema_tool_exception_returns_failure_payload(mock_qdr
 
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
-    assert payload["error"] == "ошибка_запроса_qdrant"
-    assert payload["operation"] == "collection_schema"
+    assert payload["success"] is False
+    assert payload["error_type"] == "qdrant_error"
+    assert "collection_schema" in payload["error"]
+    assert payload["details"]["operation"] == "collection_schema"
 
 
 @pytest.mark.asyncio
@@ -147,8 +151,10 @@ async def test_qdrant_search_tool_exception_returns_failure_payload(mock_qdrant_
 
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
-    assert payload["error"] == "ошибка_запроса_qdrant"
-    assert payload["operation"] == "search"
+    assert payload["success"] is False
+    assert payload["error_type"] == "qdrant_error"
+    assert "search" in payload["error"]
+    assert payload["details"]["operation"] == "search"
 
 
 @pytest.mark.asyncio
@@ -159,8 +165,10 @@ async def test_qdrant_filter_tool_exception_returns_failure_payload(mock_qdrant_
     result = await tool(MagicMock(), MagicMock())
 
     payload = json.loads(result)
-    assert payload["error"] == "ошибка_запроса_qdrant"
-    assert payload["operation"] == "filter_points"
+    assert payload["success"] is False
+    assert payload["error_type"] == "qdrant_error"
+    assert "filter_points" in payload["error"]
+    assert payload["details"]["operation"] == "filter_points"
 
 
 @pytest.mark.asyncio
@@ -171,8 +179,10 @@ async def test_qdrant_scroll_tool_exception_returns_failure_payload(mock_qdrant_
 
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
-    assert payload["error"] == "ошибка_запроса_qdrant"
-    assert payload["operation"] == "scroll_points"
+    assert payload["success"] is False
+    assert payload["error_type"] == "qdrant_error"
+    assert "scroll_points" in payload["error"]
+    assert payload["details"]["operation"] == "scroll_points"
 
 
 @pytest.mark.asyncio
@@ -183,8 +193,10 @@ async def test_qdrant_retrieve_tool_exception_returns_failure_payload(mock_qdran
     
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
-    assert payload["error"] == "ошибка_запроса_qdrant"
-    assert payload["operation"] == "retrieve_by_id"
+    assert payload["success"] is False
+    assert payload["error_type"] == "qdrant_error"
+    assert "retrieve_by_id" in payload["error"]
+    assert payload["details"]["operation"] == "retrieve_by_id"
 
 
 def test_all_qdrant_tools_registered():

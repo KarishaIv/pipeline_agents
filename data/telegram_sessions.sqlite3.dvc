@@ -1,0 +1,5 @@
+outs:
+- md5: e7b8e85b653b6b04bae0126d1dda8ceb
+  size: 20480
+  hash: md5
+  path: telegram_sessions.sqlite3

@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from src.meta_agent.catalog import (
+from src.meta_agent.configs import (
     AVAILABLE_COLLECTIONS,
     COLLECTION_DESCRIPTIONS,
     CollectionName,
     get_collection_catalog,
 )
-from src.meta_agent.config import (
+from src.meta_agent.configs import (
     BIG_MODEL,
     CHARTS_DIR,
     CODE_TIMEOUT,
@@ -102,7 +102,7 @@ def test_config_constants():
 
 def test_config_env_overrides(monkeypatch):
     """Test that config respects environment variables."""
-    import src.meta_agent.config as config_module
+    import src.meta_agent.configs.runtime as config_module
 
     monkeypatch.setenv("QDRANT_HOST", "test-host")
     monkeypatch.setenv("QDRANT_PORT", "9999")
@@ -115,7 +115,7 @@ def test_config_env_overrides(monkeypatch):
 def test_config_charts_dir_resolution():
     """Test CHARTS_DIR uses PROJECT_ROOT."""
     from config import PROJECT_ROOT
-    from src.meta_agent.config import CHARTS_DIR
+    from src.meta_agent.configs import CHARTS_DIR
 
     assert CHARTS_DIR == PROJECT_ROOT / "charts"
     assert CHARTS_DIR.parent.name != "charts"  # is under root

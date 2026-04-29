@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Callable
 import logging
 
-from src.data_loading import load_synthetic_data, load_american_data, preprocess_pgm_data, load_survey_data, load_evidence_from_json
-from src.pgm_model import create_pgm_model, train_pgm_model, generate_synthetic_data
-from src.utils import normalize_features, normalize_evidence, filter_real_russian_data, translate_ocean_to_readable, get_income_range, get_uuid, get_embedding, get_clear_personas
-from src.clustering import replicate_personas_with_gmm
-from src.core.simulation_manager import SimulationManager
-from src.core.storage import StorageManager
-from src.news_enricher import NewsContextEnricher
+from data_loading import load_synthetic_data, load_american_data, preprocess_pgm_data, load_survey_data, load_evidence_from_json
+from pgm_model import create_pgm_model, train_pgm_model, generate_synthetic_data
+from utils import normalize_features, normalize_evidence, filter_real_russian_data, translate_ocean_to_readable, get_income_range, get_uuid, get_embedding, get_clear_personas
+from clustering import replicate_personas_with_gmm
+from core.simulation_manager import SimulationManager
+from core.storage import StorageManager
+from news_enricher import NewsContextEnricher
 
 from config import *
 import pandas as pd

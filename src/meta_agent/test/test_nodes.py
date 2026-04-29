@@ -8,21 +8,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.meta_agent.config import MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.configs import MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
 from src.meta_agent.nodes import (
-    _extract_dto_store,
-    _fallback_worker_payload,
     analyzer_node,
     code_writer_node,
     data_extractor_node,
     supervisor_node,
 )
+from src.meta_agent.utils.json_responses import json_node_failure
 from src.meta_agent.utils.state import MetaAgentState
+from src.meta_agent.workers import _extract_dto_store
 
 
 def test_fallback_worker_payload():
     """Test fallback when JSON parsing of agent output fails."""
-    payload = _fallback_worker_payload(
+    payload = json_node_failure(
         worker="supervisor",
         raw_output="Invalid JSON output",
         expected_tool="supervisor_decision",
@@ -105,7 +105,7 @@ async def test_data_extractor_node(mock_run_agent, meta_state, mocker):
         ),
         context={"custom_context": {"dto_store": {"dto1": {}}}},
     )
-    mocker.patch("src.meta_agent.nodes._extract_dto_store", return_value={"dto1": {}})
+    mocker.patch("src.meta_agent.workers._extract_dto_store", return_value={"dto1": {}})
 
     state = meta_state.model_copy()
     state.current_task = "Extract personas data"
@@ -208,7 +208,7 @@ async def test_code_writer_node(mock_run_agent, meta_state, mocker):
         ),
         context={"custom_context": {}},
     )
-    mocker.patch("src.meta_agent.nodes._extract_dto_store", return_value={})
+    mocker.patch("src.meta_agent.workers._extract_dto_store", return_value={})
 
     state = meta_state.model_copy()
     state.current_task = "Compute statistics"
@@ -221,11 +221,38 @@ async def test_code_writer_node(mock_run_agent, meta_state, mocker):
 
 def test_nodes_import_and_structure():
     """Verify all nodes and helpers are importable and have expected signatures."""
-    import src.meta_agent.nodes as nodes_mod
+    import meta_agent.nodes as nodes_mod
 
     assert hasattr(nodes_mod, "supervisor_node")
     assert hasattr(nodes_mod, "data_extractor_node")
     assert hasattr(nodes_mod, "analyzer_node")
     assert hasattr(nodes_mod, "code_writer_node")
-    assert hasattr(nodes_mod, "_fallback_worker_payload")
     assert nodes_mod.MAX_SUPERVISOR_ITERATIONS == MAX_SUPERVISOR_ITERATIONS
+
+
+@pytest.mark.asyncio
+async def test_supervisor_node_non_json_fallback(mock_run_agent, meta_state, mocker):
+    """Regression test: when supervisor worker returns non-JSON (parse failure),
+    it should treat the raw output as the final answer and end the graph.
+    """
+    mocker.patch(
+        "src.meta_agent.nodes.summarize_history_text",
+        new=AsyncMock(return_value="compressed history"),
+    )
+    plain_output = "This is a plain text final answer from the supervisor."
+    mock_run_agent.return_value = MagicMock(
+        output=plain_output,
+        context={"custom_context": {}},
+    )
+
+    state = meta_state.model_copy()
+    state.iterations = 3
+    result = await supervisor_node(state, MagicMock())
+
+    assert result["next_worker"] == "end"
+    assert result["answer"] == plain_output
+    assert result["iterations"] == 4
+    assert len(result.get("history", [])) == 1
+    assert result["history"][0]["role"] == "supervisor"
+    assert result["history"][0]["content"] == plain_output
+    mock_run_agent.assert_called()

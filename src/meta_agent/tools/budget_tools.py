@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 from sgr_agent_core.base_tool import BaseTool
+from src.meta_agent.utils.json_responses import serialize_tool_result
 
 if TYPE_CHECKING:
     from sgr_agent_core.agent_definition import AgentConfig
@@ -35,4 +35,4 @@ class RemainingStepsTool(BaseTool):
                 "оценка оставшихся вызовов приблизительная."
             ),
         }
-        return json.dumps(payload, ensure_ascii=False)
+        return serialize_tool_result(payload)

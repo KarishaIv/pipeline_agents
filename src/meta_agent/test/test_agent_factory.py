@@ -9,9 +9,9 @@ from src.meta_agent.agent_factory import (
     _safe_get_custom_context,
     _unwrap,
     make_agent,
-    make_openai_client,
     run_agent,
 )
+from utils import make_openai_client
 
 
 def test_unwrap_function():
@@ -57,8 +57,8 @@ def test_safe_get_custom_context_handles_context_access_exception():
     assert _safe_get_custom_context(bad_agent) is None
 
 
-@patch("src.meta_agent.agent_factory.AsyncOpenAI")
-@patch("src.meta_agent.agent_factory.wrap_openai")
+@patch("utils.AsyncOpenAI")
+@patch("utils.wrap_openai")
 def test_make_openai_client(mock_wrap, mock_asyncopenai, monkeypatch):
     """Test client creation with Yandex config and optional LangSmith wrapping."""
     monkeypatch.setenv("YANDEX_API_KEY", "test-key")
@@ -71,8 +71,8 @@ def test_make_openai_client(mock_wrap, mock_asyncopenai, monkeypatch):
     assert mock_wrap.called
 
 
-@patch("src.meta_agent.agent_factory.AsyncOpenAI")
-@patch("src.meta_agent.agent_factory.wrap_openai")
+@patch("utils.AsyncOpenAI")
+@patch("utils.wrap_openai")
 def test_make_openai_client_without_tracing(mock_wrap, mock_asyncopenai, monkeypatch):
     """Test client is not wrapped when tracing is disabled."""
     monkeypatch.setenv("YANDEX_API_KEY", "test-key")
@@ -153,7 +153,7 @@ async def test_run_agent_error_handling(mocker):
 
 
 def test_agent_factory_metadata():
-    """Basic checks for exported functions."""
+    """Verify key functions are exported and callable from the module."""
     assert callable(make_agent)
     assert callable(run_agent)
     assert callable(_unwrap)

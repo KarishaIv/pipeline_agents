@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from config import *
 import json
-from src.utils import get_income_range
+from utils import get_income_range
 
 def load_evidence_from_json(json_path: str):
     """Load evidence from JSON file"""

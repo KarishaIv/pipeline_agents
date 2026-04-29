@@ -6,13 +6,23 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from src.meta_agent.dto import DtoPayload
+
+
 @pytest.mark.asyncio
 async def test_compute_stats_tool(sample_dto_data, mocker):
     """Test ComputeStatsTool with pandas DataFrame stats."""
     from src.meta_agent.tools.analyzer_tools import ComputeStatsTool
 
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "income"],
+        num_rows=2,
+        sample=[],
+        rows=sample_dto_data,
+    )
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(
-        pd.DataFrame(sample_dto_data), {"num_rows": 2}, None
+        pd.DataFrame(sample_dto_data), test_payload, None
     ))
 
     tool = ComputeStatsTool(
@@ -35,9 +45,16 @@ async def test_compute_stats_tool_without_numeric_columns_returns_error(mocker):
     """Test stats tool returns error when DTO has no numeric columns."""
     from src.meta_agent.tools.analyzer_tools import ComputeStatsTool
 
+    test_payload = DtoPayload(
+        summary_text="text only",
+        columns=["text"],
+        num_rows=2,
+        sample=[],
+        rows=[{"text": "a"}, {"text": "b"}],
+    )
     mocker.patch(
-        "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
-        return_value=(pd.DataFrame([{"text": "a"}, {"text": "b"}]), {"num_rows": 2}, None),
+        "meta_agent.tools.analyzer_tools.resolve_dto_or_error",
+        return_value=(pd.DataFrame([{"text": "a"}, {"text": "b"}]), test_payload, None),
     )
     tool = ComputeStatsTool(reasoning="Try stats on text only", dto_name="text_dto")
 
@@ -51,9 +68,16 @@ async def test_compute_stats_tool_exception_branch_returns_error(sample_dto_data
     """Test ComputeStatsTool catches unexpected exceptions and returns error JSON."""
     from src.meta_agent.tools.analyzer_tools import ComputeStatsTool
 
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "income"],
+        num_rows=2,
+        sample=[],
+        rows=sample_dto_data,
+    )
     mocker.patch(
         "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
-        return_value=(pd.DataFrame(sample_dto_data), {"num_rows": 2}, None),
+        return_value=(pd.DataFrame(sample_dto_data), test_payload, None),
     )
     mocker.patch("src.meta_agent.tools.analyzer_tools.dto_summary_view", side_effect=RuntimeError("summary fail"))
     tool = ComputeStatsTool(reasoning="Force exception", dto_name="test_dto")
@@ -76,8 +100,15 @@ async def test_create_chart_tool_success_by_type(chart_type, temp_charts_dir, sa
     tested_chart_types = {"bar", "line", "scatter", "histogram", "pie", "box", "heatmap"}
     assert tested_chart_types == allowed_chart_types
 
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "income"],
+        num_rows=2,
+        sample=[],
+        rows=sample_dto_data,
+    )
     df = pd.DataFrame(sample_dto_data)
-    mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, {}, None))
+    mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, test_payload, None))
     mocker.patch("matplotlib.pyplot.savefig")
     mocker.patch("matplotlib.pyplot.close")
 
@@ -102,8 +133,15 @@ async def test_create_chart_tool_scatter_requires_numeric_columns(mocker):
     """Test scatter returns error when insufficient numeric columns."""
     from src.meta_agent.tools.analyzer_tools import CreateChartTool
 
+    test_payload = DtoPayload(
+        summary_text="labels",
+        columns=["label"],
+        num_rows=2,
+        sample=[],
+        rows=[{"label": "a"}, {"label": "b"}],
+    )
     df = pd.DataFrame([{"label": "a"}, {"label": "b"}])
-    mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, {}, None))
+    mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, test_payload, None))
     
     tool = CreateChartTool(reasoning="Scatter fail", dto_name="test_dto", chart_type="scatter", title="Scatter")
     result = await tool(MagicMock(), MagicMock())
@@ -121,8 +159,15 @@ async def test_summarize_texts_tool(mock_openai_client, sample_dto_data, mocker)
     mock_response.choices = [MagicMock(message=MagicMock(content="Summary: High income group prefers X."))]
     mock_openai_client.chat.completions.create.return_value = mock_response
 
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["text"],
+        num_rows=2,
+        sample=[],
+        rows=sample_dto_data,
+    )
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(
-        pd.DataFrame(sample_dto_data), {}, None
+        pd.DataFrame(sample_dto_data), test_payload, None
     ))
     mocker.patch("src.meta_agent.tools.analyzer_tools.get_model_uri", return_value="test-model")
 
@@ -147,9 +192,17 @@ async def test_summarize_texts_tool_returns_error_when_no_text(mock_openai_clien
     """Test summarize_texts returns error when DTO has no text content."""
     from src.meta_agent.tools.analyzer_tools import SummarizeTextsTool
 
+    test_payload = DtoPayload(
+        summary_text="empty",
+        columns=[],
+        num_rows=0,
+        sample=[],
+        rows=[],
+    )
+    # Provide an empty DataFrame to test error case
     mocker.patch(
-        "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
-        return_value=(pd.DataFrame([{"age": 20}, {"age": 30}]), {}, None),
+        "meta_agent.tools.analyzer_tools.resolve_dto_or_error",
+        return_value=(pd.DataFrame(), test_payload, None),
     )
     tool = SummarizeTextsTool(reasoning="Try summary", dto_name="test_dto", text_columns=["text"])
 
@@ -164,9 +217,16 @@ async def test_summarize_texts_tool_llm_exception_returns_error(mock_openai_clie
     from src.meta_agent.tools.analyzer_tools import SummarizeTextsTool
 
     mock_openai_client.chat.completions.create.side_effect = RuntimeError("llm down")
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["text"],
+        num_rows=2,
+        sample=[],
+        rows=sample_dto_data,
+    )
     mocker.patch(
         "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
-        return_value=(pd.DataFrame(sample_dto_data), {}, None),
+        return_value=(pd.DataFrame(sample_dto_data), test_payload, None),
     )
     tool = SummarizeTextsTool(reasoning="Try summary", dto_name="test_dto", text_columns=["text"])
 

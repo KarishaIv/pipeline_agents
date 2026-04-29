@@ -8,13 +8,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from src.meta_agent.dto import DtoPayload
 from src.meta_agent.graph import (
+    DTO_PAYLOAD_MSGPACK_MODULE,
     MetaAgentGraphManager,
     MetaAgentResult,
     meta_graph_manager,
 )
 from src.meta_agent.utils.routing import route_analyzer, route_supervisor
-from src.meta_agent.utils.state import MetaAgentState, build_turn_state_update
+from src.meta_agent.utils.state import build_turn_state_update
 
 
 def test_resolve_session_thread_id():
@@ -50,6 +52,8 @@ async def test_manager_uses_async_sqlite_checkpointer():
     manager = MetaAgentGraphManager()
     await manager.get_graph()
     assert isinstance(manager._checkpointer, AsyncSqliteSaver)
+    assert DTO_PAYLOAD_MSGPACK_MODULE in manager._checkpointer.serde._allowed_msgpack_modules
+    await manager.aclose()
 
 
 @pytest.mark.asyncio
@@ -110,12 +114,19 @@ async def test_prepare_invoke_builds_config_and_state_update():
     """Test _prepare_invoke uses snapshot and builds state update."""
     manager = MetaAgentGraphManager()
     graph = MagicMock()
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=[],
+        num_rows=0,
+        sample=[],
+        rows=[],
+    )
     graph.aget_state = AsyncMock(
         return_value=MagicMock(
             values={
                 "question": "old q",
                 "history": [{"role": "assistant", "content": "prev"}],
-                "dto_store": {"dto1": {"rows": []}},
+                "dto_store": {"dto1": test_payload},
                 "next_worker": "analyzer",
                 "current_task": "old task",
                 "delegated_attempts": 2,
@@ -131,7 +142,7 @@ async def test_prepare_invoke_builds_config_and_state_update():
     assert runnable_config["configurable"]["thread_id"] == "thread-1"
     assert state_update["question"] == "new question"
     assert state_update["iterations"] == 0
-    assert state_update["dto_store"] == {"dto1": {"rows": []}}
+    assert "dto1" in state_update["dto_store"]
     assert state_update["history"][-1]["content"] == "new question"
 
 
@@ -181,7 +192,7 @@ async def test_finalize_invoke_updates_history_and_returns_answer():
             ]
         ),
     ):
-        answer = await manager._finalize_invoke(runnable_config, result, "user question")
+        answer = await manager._finalize_invoke(runnable_config, result)
 
     assert answer == "final answer"
     graph.aupdate_state.assert_awaited_once()

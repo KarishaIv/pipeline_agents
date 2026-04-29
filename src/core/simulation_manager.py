@@ -6,8 +6,8 @@ from typing import Iterable, List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from src.agents.survey_agent import MultiAgentReasoner
-from src.core.storage import StorageManager
+from agents.survey_agent import MultiAgentReasoner
+from core.storage import StorageManager
 from config import *
 
 logger = logging.getLogger(__name__)

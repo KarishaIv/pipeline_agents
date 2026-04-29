@@ -4,11 +4,12 @@ Covers _normalize_rows, register_dto, resolve_dto_or_error, ListDtoNamesTool, Sa
 and all helper functions with edge cases.
 """
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
+from src.meta_agent.dto import DtoPayload
 from src.meta_agent.tools.dto_tools import (
     DTO_STORE_KEY,
     ListDtoNamesTool,
@@ -84,15 +85,16 @@ def test_register_dto_and_summary(sample_dto_data):
     )
 
     assert name.startswith("test_source_")
-    assert payload["num_rows"] == 2
-    assert len(payload["columns"]) >= 1
-    assert "sample" in payload
-    assert payload["meta"]["source"] == "test"
+    assert isinstance(payload, DtoPayload)
+    assert payload.num_rows == 2
+    assert len(payload.columns) >= 1
+    assert payload.sample
+    assert payload.meta["source"] == "test"
 
     summary = dto_summary_view(name, payload, max_len=50)
-    assert summary["dto_name"] == name
-    assert "columns" in summary
-    assert isinstance(summary["sample"], (list, str))
+    assert summary.dto_name == name
+    assert summary.columns
+    assert isinstance(summary.sample, (list, str))
 
 
 def test_get_dto_and_resolve(sample_dto_data):
@@ -103,12 +105,14 @@ def test_get_dto_and_resolve(sample_dto_data):
     name, _ = register_dto(mock_context, source="test", data=sample_dto_data)
 
     dto = get_dto(mock_context, name)
-    assert dto["num_rows"] == 2
+    assert isinstance(dto, DtoPayload)
+    assert dto.num_rows == 2
 
     # Resolve success
     df, payload, error = resolve_dto_or_error(mock_context, name)
     assert isinstance(df, pd.DataFrame)
     assert payload is not None
+    assert isinstance(payload, DtoPayload)
     assert error is None
     assert len(df) == 2
 
@@ -124,20 +128,39 @@ def test_get_dto_and_resolve(sample_dto_data):
 def test_dto_to_dataframe():
     """Test DataFrame conversion from various DTO payloads."""
     # From rows
-    payload1 = {"rows": [{"a": 1, "b": 2}, {"a": 3, "b": 4}], "columns": ["a", "b"]}
+    payload1 = DtoPayload(
+        summary_text="test",
+        columns=["a", "b"],
+        num_rows=2,
+        sample=[],
+        rows=[{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+    )
     df1 = dto_to_dataframe(payload1)
     assert isinstance(df1, pd.DataFrame)
     assert len(df1) == 2
     assert list(df1.columns) == ["a", "b"]
 
     # From columns only
-    payload2 = {"columns": ["x", "y"]}
+    payload2 = DtoPayload(
+        summary_text="test",
+        columns=["x", "y"],
+        num_rows=0,
+        sample=[],
+        rows=[],
+    )
     df2 = dto_to_dataframe(payload2)
     assert len(df2.columns) == 2
     assert len(df2) == 0
 
     # Empty
-    assert len(dto_to_dataframe({})) == 0
+    payload3 = DtoPayload(
+        summary_text="empty",
+        columns=[],
+        num_rows=0,
+        sample=[],
+        rows=[],
+    )
+    assert len(dto_to_dataframe(payload3)) == 0
 
 
 @pytest.mark.asyncio
@@ -158,6 +181,33 @@ async def test_list_dtos_tool(sample_dto_data):
 
 
 @pytest.mark.asyncio
+async def test_list_dtos_tool_accepts_checkpoint_restored_dicts():
+    """DTOs restored from checkpoints can arrive in tool context as plain dicts."""
+    tool = ListDtoNamesTool(reasoning="Need to see restored DTOs")
+    mock_context = MagicMock()
+    mock_context.custom_context = {
+        DTO_STORE_KEY: {
+            "checkpoint_dto": {
+                "summary_text": "Restored data",
+                "columns": ["id", "name"],
+                "num_rows": 2,
+                "sample": [{"id": 1, "name": "Alice"}],
+                "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
+                "meta": {"source": "checkpoint"},
+            }
+        }
+    }
+    mock_config = MagicMock()
+
+    result = await tool(mock_context, mock_config)
+    payload = json.loads(result)
+
+    assert payload["dto_count"] == 1
+    assert payload["dtos"][0]["dto_name"] == "checkpoint_dto"
+    assert isinstance(mock_context.custom_context[DTO_STORE_KEY]["checkpoint_dto"], DtoPayload)
+
+
+@pytest.mark.asyncio
 async def test_sample_dto_tool():
     """Test SampleDtoTool for pagination and error on missing DTO."""
     tool = SampleDtoTool(
@@ -167,13 +217,16 @@ async def test_sample_dto_tool():
         start=0,
     )
     mock_context = MagicMock()
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["id"],
+        num_rows=10,
+        sample=[],
+        rows=[{"id": i} for i in range(10)],
+    )
     mock_context.custom_context = {
         DTO_STORE_KEY: {
-            "test_dto": {
-                "rows": [{"id": i} for i in range(10)],
-                "columns": ["id"],
-                "num_rows": 10,
-            }
+            "test_dto": test_payload,
         }
     }
     mock_config = MagicMock()

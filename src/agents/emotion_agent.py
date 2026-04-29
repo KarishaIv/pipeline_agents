@@ -1,5 +1,5 @@
-from src.utils import robust_llm_call
-from src.schemas.emotional_schema import EmotionalStateSchema
+from utils import robust_llm_call
+from schemas.emotional_schema import EmotionalStateSchema
 
 class EmotionAgent:
     """

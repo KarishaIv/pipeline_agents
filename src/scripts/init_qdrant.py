@@ -119,11 +119,14 @@ def create_collection_from_parquet(
     collection_name: str,
     parquet_path: Path,
     index_column: str = "UUID",
-    payload_keys: List[str] = [],
+    payload_keys: Optional[List[str]] = None,
     vector_keys: List[str] = ["embedding"],
     distance: Distance = Distance.COSINE,
 ) -> int:
     """Создаёт коллекцию из parquet файла с именованными векторами."""
+    if payload_keys is None:
+        payload_keys = []
+
     if client.collection_exists(collection_name):
         client.delete_collection(collection_name)
 

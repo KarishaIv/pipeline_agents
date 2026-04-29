@@ -12,7 +12,7 @@ from src.meta_agent.tools.budget_tools import RemainingStepsTool
 
 @pytest.mark.asyncio
 async def test_remaining_steps_tool():
-    """Test RemainingStepsTool calculates and returns correct budget JSON."""
+    """Test RemainingStepsTool calculates and returns correct budget JSON with success wrapper."""
     tool = RemainingStepsTool()
     mock_context = MagicMock()
     mock_context.iteration = 5
@@ -23,6 +23,7 @@ async def test_remaining_steps_tool():
 
     assert isinstance(result, str)
     payload = json.loads(result)
+    assert payload["success"] is True
     assert payload["current_iteration"] == 5
     assert payload["max_iterations"] == 20
     assert payload["remaining_iterations"] == 15
@@ -34,7 +35,7 @@ async def test_remaining_steps_tool():
 @pytest.mark.parametrize("current,maximum,expected_remaining", [(0, 10, 10), (5, 5, 0), (15, 10, 0)])
 @pytest.mark.asyncio
 async def test_remaining_steps_boundary_values(current, maximum, expected_remaining):
-    """Test edge cases for iteration calculations."""
+    """Test edge cases for iteration calculations with success wrapper."""
     tool = RemainingStepsTool()
     mock_context = MagicMock()
     mock_context.iteration = current
@@ -43,6 +44,7 @@ async def test_remaining_steps_boundary_values(current, maximum, expected_remain
 
     result_str = await tool(mock_context, mock_config)
     result = json.loads(result_str)
+    assert result["success"] is True
     assert result["remaining_iterations"] == expected_remaining
     assert result["current_iteration"] == current
     assert result["max_iterations"] == maximum

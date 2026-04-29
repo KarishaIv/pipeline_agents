@@ -1,7 +1,7 @@
 """Инструменты мета-агента
 """
 
-from src.meta_agent.catalog import AVAILABLE_COLLECTIONS
+from src.meta_agent.configs import AVAILABLE_COLLECTIONS
 from src.meta_agent.tools.analyzer_tools import (
     ComputeStatsTool,
     CreateChartTool,
