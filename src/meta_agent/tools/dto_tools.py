@@ -86,18 +86,6 @@ def _infer_columns(rows: list[dict[str, Any]]) -> list[str]:
     return ordered
 
 
-def _dto_to_dataframe(dto_payload: dict[str, Any]) -> pd.DataFrame:
-    """Helper to convert DTO payload (with 'rows' or 'columns') to pandas DataFrame.
-    """
-    rows = dto_payload.get("rows", [])
-    columns = dto_payload.get("columns", [])
-    if isinstance(rows, list) and rows:
-        return pd.DataFrame(rows)
-    if isinstance(columns, list):
-        return pd.DataFrame(columns=columns)
-    return pd.DataFrame()
-
-
 def _sanitize_source(source: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", source.strip().lower())
     cleaned = re.sub(r"_+", "_", cleaned).strip("_")

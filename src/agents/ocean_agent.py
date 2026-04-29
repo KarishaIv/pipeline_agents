@@ -2,7 +2,7 @@ from typing import TypedDict
 import os
 import pandas as pd
 from langchain_openai import ChatOpenAI
-from src.schemas.ocean_schema import ocean_schema
+from schemas.ocean_schema import ocean_schema
 from config import LLM_MODEL, LLM_TEMPERATURE, YANDEX_BASE_URL, get_model_uri
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate

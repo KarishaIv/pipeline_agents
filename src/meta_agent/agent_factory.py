@@ -4,9 +4,6 @@ import json
 import logging
 import os
 
-from langsmith.wrappers import wrap_openai
-from openai import AsyncOpenAI
-
 from sgr_agent_core import AgentConfig
 from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
 from sgr_agent_core.base_tool import BaseTool

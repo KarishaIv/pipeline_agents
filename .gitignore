@@ -41,3 +41,7 @@ pipeline.log
 
 # sgr_agent_core logs
 logs/
+
+**sqlite3-shm**
+**sqlite3-wal**
+**.egg**

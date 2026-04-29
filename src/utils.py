@@ -425,16 +425,8 @@ def _fetch_embedding(text: str, model_suffix: str) -> List[float]:
 
 def get_embedding(text: str, query: bool = True) -> List[float]:
     """Возвращает embedding текста через Yandex Embeddings API."""
-<<<<<<< HEAD
-<<<<<<< HEAD
     if not text or not text.strip():
         text = "none"
-=======
->>>>>>> 0612fe8 (Fixed: renovation: pip -> uv, new python, pydantic, get rid of yandex-chain)
-=======
-    if not text or not text.strip():
-        text = "none"
->>>>>>> 34aedc5 (Fixed: lots of simplifications)
     suffix = "text-search-query" if query else "text-search-doc"
     return _fetch_embedding(text, suffix)
 
