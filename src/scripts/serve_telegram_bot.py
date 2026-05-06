@@ -24,7 +24,7 @@ from meta_agent.telegram.bot_client import TelegramBotClient  # noqa: E402
 from meta_agent.telegram.meta_agent_client import MetaAgentClient  # noqa: E402
 from meta_agent.telegram.session_store import TelegramSessionStore  # noqa: E402
 from meta_agent.telegram.message_handler import MessageHandler  # noqa: E402
-from meta_agent.telegram.update_parser import parse_update  # noqa: E402
+from meta_agent.telegram.update_parser import parse_update, parse_callback_query  # noqa: E402
 
 load_dotenv(override=True)
 
@@ -55,7 +55,7 @@ async def run_bot() -> None:
                 updates = await telegram.get_updates(
                     offset=update_offset,
                     timeout=config.poll_timeout,
-                    allowed_updates=["message"],
+                    allowed_updates=["message", "callback_query"],
                 )
 
                 for update in updates:
@@ -75,7 +75,27 @@ async def run_bot() -> None:
                             await handler.handle_message(msg)
                         except Exception:
                             logger.exception(
-                                "Error handling message from chat %d", msg.chat_id
+                            "Error handling message from chat %d", msg.chat_id
+                        )
+
+                    callback = parse_callback_query(update)
+                    if callback:
+                        logger.debug(
+                            "Received callback from chat %d (user %d): %s",
+                            callback.chat_id,
+                            callback.user_id,
+                            callback.data[:50],
+                        )
+                        try:
+                            await handler.handle_callback_query(
+                                callback.callback_id,
+                                callback.chat_id,
+                                callback.user_id,
+                                callback.data,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Error handling callback from chat %d", callback.chat_id
                             )
 
             except Exception as e:

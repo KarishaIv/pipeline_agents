@@ -6,7 +6,6 @@
 
 import logging
 import time
-import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,6 +24,7 @@ from src.meta_agent.utils.history import (
     build_persisted_history,
 )
 from src.meta_agent.utils.routing import route_analyzer, route_supervisor
+from src.meta_agent.utils.thread_ids import generate_thread_id
 
 logger = logging.getLogger("meta_agent")
 DTO_PAYLOAD_MSGPACK_MODULE = ("src.meta_agent.dto", "DtoPayload")
@@ -32,8 +32,8 @@ DTO_PAYLOAD_MSGPACK_MODULE = ("src.meta_agent.dto", "DtoPayload")
 
 class MetaAgentResult(NamedTuple):
     """Результат выполнения мета-агента."""
-    answer: str
     thread_id: str
+    outputs: list  # list[AgentOutput]
 
 
 class MetaAgentGraphManager:
@@ -115,7 +115,7 @@ class MetaAgentGraphManager:
         - иначе — использует переданный.
         """
         if thread_id == "-1" or thread_id is None:
-            return str(uuid.uuid7())
+            return generate_thread_id()
         return thread_id
 
     async def _prepare_invoke(self, question: str, thread_id: str) -> tuple[RunnableConfig, dict]:
@@ -123,7 +123,7 @@ class MetaAgentGraphManager:
 
         Использует поддержку Pydantic-состояния в LangGraph + редьюсеры.
         Всегда валидирует snapshot в MetaAgentState для .model_dump().
-        Редьюсеры (append_history, merge_dto_store) обрабатывают частичные обновления.
+        Редьюсеры (append_list, merge_dto_store) обрабатывают частичные обновления.
         """
         graph = await self.get_graph()
         runnable_config: RunnableConfig = {
@@ -143,19 +143,48 @@ class MetaAgentGraphManager:
         state_update = build_turn_state_update(question, snapshot_values)
         return runnable_config, state_update
 
-    async def _finalize_invoke(self, runnable_config: RunnableConfig, result: Any) -> str:
-        """Сохраняет обновлённую историю после выполнения графа и возвращает ответ.
+    async def _finalize_invoke(self, runnable_config: RunnableConfig, result: Any) -> list:
+        """Сохраняет обновлённую историю после выполнения графа и возвращает outputs.
 
         Использует aupdate_state. Редьюсер history обрабатывает добавление.
+        Преобразует artifacts (charts) в ImageOutput объекты.
+        Возвращает список outputs.
         """
+        from src.meta_agent.api_models import TextOutput, ImageOutput
+
         graph = await self.get_graph()
         result_dict = result.model_dump() if hasattr(result, "model_dump") else result
-        answer = result_dict.get("answer", "")
+
+        # Extract outputs from final state
+        outputs = list(result_dict.get("outputs", []))
+
+        # Convert artifacts to outputs (especially chart artifacts to ImageOutput)
+        artifacts = result_dict.get("artifacts", [])
+        for artifact in artifacts:
+            # Get artifact attributes (handle both dict and Pydantic model)
+            artifact_dict = artifact.model_dump() if hasattr(artifact, "model_dump") else artifact
+            artifact_kind = artifact_dict.get("kind", "")
+            filename = artifact_dict.get("filename", "")
+            mime_type = artifact_dict.get("mime_type", "application/octet-stream")
+            caption = artifact_dict.get("caption")
+            metadata = artifact_dict.get("metadata", {})
+
+            # Convert chart artifacts to ImageOutput with filename-based artifact URL
+            if artifact_kind == "chart" and filename:
+                url = f"/artifacts/{filename}"
+                image_output = ImageOutput(
+                    url=url,
+                    caption=caption,
+                    alt_text=f"Chart: {metadata.get('chart_type', 'visualization')}",
+                    mime_type=mime_type,
+                )
+                outputs.append(image_output)
+
         summarized_history = await build_persisted_history(result_dict)
 
         # history имеет append-reducer, поэтому для финального усечения используем явную замену
         await graph.aupdate_state(runnable_config, {"history": {"__replace__": summarized_history}})
-        return answer
+        return outputs
 
     @traceable(name="meta_agent.invoke_graph_session", run_type="chain")
     async def invoke_graph_session(self, question: str, thread_id: str | None = None) -> MetaAgentResult:
@@ -168,17 +197,17 @@ class MetaAgentGraphManager:
 
         graph = await self.get_graph()
         result = await graph.ainvoke(state_update, runnable_config)
-        answer = await self._finalize_invoke(runnable_config, result)
+        outputs = await self._finalize_invoke(runnable_config, result)
 
         elapsed = time.perf_counter() - t0
         logger.info("Граф завершён за %.1fс", elapsed)
-        return MetaAgentResult(answer=answer, thread_id=resolved_thread_id)
+        return MetaAgentResult(thread_id=resolved_thread_id, outputs=outputs)
 
     @traceable(name="meta_agent.invoke_graph", run_type="chain")
-    async def invoke_graph(self, question: str) -> str:
-        """Запуск без сохранения состояния: для каждого вызова создаётся новая сессия и возвращается только ответ."""
+    async def invoke_graph(self, question: str) -> list:
+        """Запуск без сохранения состояния: для каждого вызова создаётся новая сессия и возвращаются только outputs."""
         out = await self.invoke_graph_session(question, "-1")
-        return out.answer
+        return out.outputs
 
 
 meta_graph_manager = MetaAgentGraphManager()

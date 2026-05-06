@@ -40,6 +40,20 @@ def _extract_dto_store(custom_context: dict | None) -> dict:
     return dto_store
 
 
+def _extract_artifacts(custom_context: dict | None) -> list:
+    """Извлекает и возвращает копию artifacts из custom_context агента run_agent.
+
+    Гарантирует, что все артефакты (графики, файлы), зарегистрированные во время
+    выполнения, правильно попадают обратно в состояние графа. Всегда возвращает список.
+    """
+    artifacts: list = []
+    if isinstance(custom_context, dict):
+        maybe_artifacts = custom_context.get("artifacts", [])
+        if isinstance(maybe_artifacts, list):
+            artifacts = list(maybe_artifacts)  # копия для безопасности
+    return artifacts
+
+
 async def _run_worker(
     state: dict | Any,
     definition: WorkerDefinition,
@@ -138,9 +152,10 @@ async def run_structured_worker(
         content = output
 
     dto_store = _extract_dto_store(run_result.context)
+    artifacts = _extract_artifacts(run_result.context)
 
     return parsed, {
         "history": [{"role": definition.worker_name, "content": content}],
         "dto_store": dto_store,
+        "artifacts": artifacts,
     }
-

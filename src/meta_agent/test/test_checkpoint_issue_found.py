@@ -11,7 +11,7 @@ from src.meta_agent.utils.state import merge_dto_store, MetaAgentState
 
 def test_merge_dto_store_loses_type_information():
     """The merge_dto_store reducer now PRESERVES type information (after fix).
-    
+
     After the fix, merge_dto_store converts dicts to DtoPayload objects.
     """
     # Initial state: has DtoPayload
@@ -57,7 +57,7 @@ def test_merge_dto_store_loses_type_information():
 
 def test_issue_happens_during_graph_invoke():
     """Simulate what happens during actual graph execution (after fix).
-    
+
     After the fix, the merge_dto_store reducer properly converts dicts to DtoPayload,
     so dicts don't leak into the store.
     """
@@ -146,7 +146,7 @@ def test_issue_happens_during_graph_invoke():
 
 def test_the_real_fix_needed():
     """The fix should be in merge_dto_store to ensure all values are DtoPayload.
-    
+
     OR in get_dto_store to ensure proper type conversion when loading from checkpoint.
     """
     # The merged dict contains plain dicts
@@ -163,7 +163,7 @@ def test_the_real_fix_needed():
 
     print("\n=== Proposed Fix ===")
     print("Option 1: Make merge_dto_store validate the right dict:")
-    
+
     # Proposed fix
     def merge_dto_store_fixed(
         left: dict, right: dict | None

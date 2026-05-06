@@ -15,7 +15,7 @@ async def test_ask_endpoint_success(mocker):
     """Test successful POST /ask request."""
     from src.scripts.serve_meta_agent import ask_json
 
-    mock_result = MetaAgentResult(answer="Test answer", thread_id="thread-123")
+    mock_result = MetaAgentResult(thread_id="thread-123", outputs=[TextOutput(text="Test answer")])
     mocker.patch(
         "src.scripts.serve_meta_agent.meta_graph_manager.invoke_graph_session",
         new=AsyncMock(return_value=mock_result),
@@ -36,7 +36,7 @@ async def test_ask_endpoint_with_existing_thread(mocker):
     """Test POST /ask with existing thread ID."""
     from src.scripts.serve_meta_agent import ask_json
 
-    mock_result = MetaAgentResult(answer="Follow-up answer", thread_id="thread-123")
+    mock_result = MetaAgentResult(thread_id="thread-123", outputs=[TextOutput(text="Follow-up answer")])
     mock_invoke = AsyncMock(return_value=mock_result)
     mocker.patch("src.scripts.serve_meta_agent.meta_graph_manager.invoke_graph_session", new=mock_invoke)
 

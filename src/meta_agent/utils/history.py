@@ -271,10 +271,7 @@ async def build_persisted_history(
     summary_max_tokens: int | None = HISTORY_SUMMARY_MAX_TOKENS,
 ) -> list[Message]:
     """Build final history snapshot for checkpointing."""
-    answer = result.get("answer", "")
     result_history = list(result.get("history", []))
-    if answer:
-        result_history.append({"role": "assistant", "content": answer})
     return await summarize_history_list(
         result_history,
         summarizer=summarizer,

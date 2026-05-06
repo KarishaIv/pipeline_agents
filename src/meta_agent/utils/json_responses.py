@@ -62,7 +62,7 @@ def serialize_tool_result(result: Any) -> str:
     **Important:** This function ALWAYS wraps the result with "success": true.
     All callers must expect responses in the format:
         {"success": true, ...payload...}
-    
+
     This ensures consistent response schemas across all tools
 
     If result is a dict or list, passes to json_success.
@@ -84,9 +84,9 @@ def serialize_tool_result(result: Any) -> str:
         elif isinstance(val, list):
             return [convert_value(item) for item in val]
         return val
-    
+
     result = convert_value(result)
-    
+
     if isinstance(result, dict):
         return json_success(result)
     if isinstance(result, list):

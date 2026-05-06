@@ -19,6 +19,16 @@ class TelegramMessage:
     command: Optional[str] = None
 
 
+@dataclass
+class TelegramCallback:
+    """Parsed Telegram callback query."""
+
+    callback_id: str
+    chat_id: int
+    user_id: int
+    data: str
+
+
 def parse_update(update: dict[str, Any]) -> Optional[TelegramMessage]:
     """Parse a Telegram update into a message.
 
@@ -65,6 +75,42 @@ def parse_update(update: dict[str, Any]) -> Optional[TelegramMessage]:
         text=text,
         is_command=is_command,
         command=command,
+    )
+
+
+def parse_callback_query(update: dict[str, Any]) -> Optional[TelegramCallback]:
+    """Parse a Telegram callback_query update.
+
+    Args:
+        update: Raw Telegram update object.
+
+    Returns:
+        TelegramCallback or None if update is not a callback_query type.
+    """
+    if "callback_query" not in update:
+        return None
+
+    callback_data = update["callback_query"]
+    callback_id = callback_data.get("id")
+    data = callback_data.get("data", "").strip()
+
+    if not callback_id or not data:
+        logger.warning("Missing callback_id or data in callback_query")
+        return None
+
+    from_data = callback_data.get("from", {})
+    chat_id = callback_data.get("message", {}).get("chat", {}).get("id")
+    user_id = from_data.get("id")
+
+    if not chat_id or not user_id:
+        logger.warning("Missing chat_id or user_id in callback_query")
+        return None
+
+    return TelegramCallback(
+        callback_id=callback_id,
+        chat_id=chat_id,
+        user_id=user_id,
+        data=data,
     )
 
 

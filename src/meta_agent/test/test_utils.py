@@ -22,7 +22,7 @@ from src.meta_agent.utils.history import (
 from src.meta_agent.utils.routing import route_analyzer, route_supervisor
 from src.meta_agent.utils.state import (
     MetaAgentState,
-    append_history,
+    append_list,
     build_turn_state_update,
     merge_dto_store,
     state_to_dict,
@@ -71,15 +71,14 @@ def test_truncate_history_and_list(history, expected_length, should_truncate):
 
 @pytest.mark.asyncio
 async def test_build_persisted_history():
-    """Test build_persisted_history stores result history and assistant answer."""
+    """Test build_persisted_history returns history from result."""
     result = {
-        "answer": "Test answer",
         "history": [{"role": "user", "content": "Previous"}],
     }
     persisted = await build_persisted_history(result)
     assert isinstance(persisted, list)
-    assert len(persisted) >= 2  # existing history + assistant
-    assert any("Test answer" in str(msg.get("content", "")) for msg in persisted)
+    assert len(persisted) >= 1
+    assert any("Previous" in str(msg.get("content", "")) for msg in persisted)
 
 
 @pytest.mark.asyncio
@@ -163,22 +162,22 @@ async def test_default_history_summarizer_passes_max_tokens_to_llm(mocker, monke
     assert create_mock.await_args.kwargs["max_tokens"] == 321
 
 
-def test_append_history_reducer():
-    """Test append_history LangGraph reducer."""
-    assert append_history([], None) == []
-    assert append_history([{"role": "user", "content": "1"}], {"role": "assistant", "content": "2"}) == [
+def test_append_list_reducer():
+    """Test append_list LangGraph reducer."""
+    assert append_list([], None) == []
+    assert append_list([{"role": "user", "content": "1"}], {"role": "assistant", "content": "2"}) == [
         {"role": "user", "content": "1"},
         {"role": "assistant", "content": "2"},
     ]
     new_msgs = [{"role": "user", "content": "3"}, {"role": "assistant", "content": "4"}]
-    assert append_history([], new_msgs) == new_msgs
-    assert append_history(None, new_msgs) == new_msgs
+    assert append_list([], new_msgs) == new_msgs
+    assert append_list(None, new_msgs) == new_msgs
 
 
 def test_merge_dto_store_reducer():
     """Test merge_dto_store LangGraph reducer."""
     from src.meta_agent.dto import DtoPayload
-    
+
     # Create proper DtoPayload objects
     dto1_left = DtoPayload(
         summary_text="Left DTO 1",
@@ -201,18 +200,18 @@ def test_merge_dto_store_reducer():
         sample=[{"data": 5}],
         rows=[{"data": 5}],
     )
-    
+
     left = {"dto1": dto1_left}
     right = {"dto1": dto1_right, "dto2": dto2}
     merged = merge_dto_store(left, right)
-    
+
     # Right wins for dto1
     assert isinstance(merged["dto1"], DtoPayload)
     assert merged["dto1"].rows == [{"data": 3}, {"data": 4}]
     # dto2 added
     assert isinstance(merged["dto2"], DtoPayload)
     assert merged["dto2"].rows == [{"data": 5}]
-    
+
     # Test edge cases
     assert merge_dto_store({}, None) == {}
     assert merge_dto_store({}, right) == right
@@ -244,7 +243,7 @@ def test_build_turn_state_update():
     assert update["delegated_attempts"] == 0
     assert update["next_worker"] == ""
     assert update["current_task"] == ""
-    assert update["answer"] == ""
+    assert "answer" not in update
     assert "existing" in update["dto_store"]
     assert len(update["history"]) == 1
     assert update["history"][-1]["content"] == question

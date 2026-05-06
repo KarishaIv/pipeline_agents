@@ -1,13 +1,11 @@
-"""Классы SystemBaseTool со структурированным выводом — по одному на роль агента.
+"""Финальные SystemBaseTool-инструменты со структурированным выводом по ролям.
 
 Каждый инструмент завершает цикл агента, выставляя context.state и
 context.execution_result, после чего возвращает валидированный JSON-пейлоад.
 
-IMPORTANT: Output tools (SupervisorDecisionTool, DataExtractionReportTool, 
-CodeExecutionReportTool, AnalyzerDecisionTool) return Pydantic model JSON directly 
-without the "success": true wrapper. This is intentional — they are structured report 
-tools that complete agent cycles, not regular tools. The "success": true wrapper is 
-only used by regular tools (execute_code, compute_stats, etc.) via serialize_tool_result().
+Финальные инструменты возвращают JSON Pydantic-модели напрямую, без обёртки
+"success": true. Это намеренно: они завершают цикл агента. Обычные инструменты
+используют serialize_tool_result().
 """
 
 from __future__ import annotations
@@ -149,8 +147,10 @@ class CodeExecutionReportTool(SystemBaseTool):
 
 
 class AnalyzerDecisionTool(SystemBaseTool):
-    """Unified decision tool for analyzer_node.
-    LLM calls this single tool to decide report vs delegate.
+    """Единый финальный инструмент analyzer_node.
+
+    Агент вызывает его, чтобы завершить анализ отчётом или делегировать задачу
+    code_writer.
     """
 
     tool_name = "analyzer_decision"
@@ -164,9 +164,9 @@ class AnalyzerDecisionTool(SystemBaseTool):
         description="Краткий анализ текущей ситуации, данных и выбранного пути (ОБЯЗАТЕЛЬНО заполнять)"
     )
     decision: Literal["report", "delegate"] = Field(
-        description="Тип решения: 'report' — завершить анализ с выводами; 'delegate' — передать code_writer"
+        description="Тип решения: 'report' — завершить анализ выводами; 'delegate' — передать задачу code_writer"
     )
-    # Fields for report
+    # Поля для decision='report'
     key_findings: List[str] = Field(
         default_factory=list,
         description="Ключевые находки и закономерности (используется при decision='report')"
@@ -175,7 +175,7 @@ class AnalyzerDecisionTool(SystemBaseTool):
         default="",
         description="Развёрнутые выводы на русском (используется при decision='report')"
     )
-    # Fields for delegate
+    # Поля для decision='delegate'
     task: str = Field(
         default="",
         description="Конкретная задача для code_writer (используется при decision='delegate')"

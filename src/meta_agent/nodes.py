@@ -84,7 +84,11 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
     if iterations >= MAX_SUPERVISOR_ITERATIONS:
         logger.warning("Супервайзер достиг лимита итераций (%d)", MAX_SUPERVISOR_ITERATIONS)
         last = history[-1]["content"] if history else "Недостаточно данных для ответа."
-        return {"next_worker": "end", "answer": last, "iterations": iterations + 1}
+        return {
+            "next_worker": "end",
+            "outputs": [{"type": "text", "text": last}],  # Create text output for final answer
+            "iterations": iterations + 1
+        }
 
     history_text = await summarize_history_text(history)
     task = f"Вопрос пользователя: {state.get('question', '')}"
@@ -97,9 +101,10 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
     if parsed is None:
         return {
             "next_worker": "end",
-            "answer": result["history"][0]["content"],
+            "outputs": [{"type": "text", "text": result["history"][0]["content"]}],
             "history": result["history"],
             "dto_store": result["dto_store"],
+            "artifacts": result.get("artifacts", []),
             "iterations": iterations + 1,
         }
 
@@ -107,9 +112,10 @@ async def supervisor_node(state: dict | Any, config: RunnableConfig | None = Non
     return {
         "next_worker": parsed.next,
         "current_task": parsed.task,
-        "answer": parsed.final_answer if parsed.next == "end" else "",
+        "outputs": [{"type": "text", "text": parsed.final_answer}] if parsed.next == "end" else [],
         "history": result["history"],
         "dto_store": result["dto_store"],
+        "artifacts": result.get("artifacts", []),
         "iterations": iterations + 1,
     }
 
@@ -131,6 +137,7 @@ async def data_extractor_node(state: dict | Any, config: RunnableConfig | None =
     return {
         "history": result["history"],
         "dto_store": result["dto_store"],
+        "artifacts": result.get("artifacts", []),
     }
 
 
@@ -157,12 +164,16 @@ async def analyzer_node(state: dict | Any, config: RunnableConfig | None = None)
             "next_worker": "supervisor",
             "history": result["history"],
             "dto_store": result["dto_store"],
+            "artifacts": result.get("artifacts", []),
             "delegated_attempts": delegated_attempts,
         }
 
-    return _process_analyzer_decision(
+    decision_result = _process_analyzer_decision(
         parsed, delegated_attempts, result["dto_store"]
     )
+    # Merge artifacts from the worker into the decision result
+    decision_result["artifacts"] = result.get("artifacts", [])
+    return decision_result
 
     if decision.decision == "report":
         findings_text = "\n".join(f"- {item}" for item in decision.key_findings)
@@ -215,6 +226,7 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
             "next_worker": "analyzer",
             "history": [{"role": "code_writer", "content": content}],
             "dto_store": state.get("dto_store", {}),
+            "artifacts": [],
         }
 
     prior_data = await _get_prior_worker_history(state)
@@ -231,6 +243,7 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
         "next_worker": "analyzer",
         "history": result["history"],
         "dto_store": result["dto_store"],
+        "artifacts": result.get("artifacts", []),
         "current_task": code_task,
         "delegated_attempts": int(state.get("delegated_attempts", 0)),
     }

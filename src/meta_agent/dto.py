@@ -1,7 +1,7 @@
-"""Pydantic models for DTO payloads and summaries.
+"""Pydantic-модели DTO payload и кратких сводок.
 
-Provides typed, validated data structures to replace ad-hoc dict-based DTOs.
-Includes DtoPayload for complete data and DtoSummary for quick previews.
+Модуль задаёт типизированные структуры для хранения полных данных DTO
+и коротких представлений, которые можно безопасно показывать агентам.
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class DtoPayload(BaseModel):
-    """Complete DTO payload with all data, metadata, and derived information.
-    
-    Fields:
-        summary_text: Human-readable description of the dataset
-        columns: List of column names in order
-        num_rows: Total number of rows in the dataset
-        sample: First N rows (for preview)
-        rows: Complete list of all data rows
-        meta: Source-specific metadata (vector name, limit, filter conditions, etc.)
+    """Полный payload DTO со строками данных, колонками и метаданными.
+
+    Поля:
+        summary_text: человекочитаемое описание набора данных;
+        columns: имена колонок в порядке появления;
+        num_rows: общее число строк;
+        sample: первые строки для предварительного просмотра;
+        rows: полный список строк данных;
+        meta: служебные метаданные источника, например вектор, limit или фильтр.
     """
 
     summary_text: str
@@ -36,7 +36,7 @@ class DtoPayload(BaseModel):
     @field_validator("num_rows")
     @classmethod
     def validate_num_rows(cls, v: int, info) -> int:
-        """Ensure num_rows matches actual rows count."""
+        """Проверить, что num_rows совпадает с фактическим числом rows."""
         if v < 0:
             raise ValueError("num_rows must be non-negative")
         if "rows" in info.data and len(info.data["rows"]) != v:
@@ -46,7 +46,7 @@ class DtoPayload(BaseModel):
     @field_validator("sample")
     @classmethod
     def validate_sample(cls, v: list[dict], info) -> list[dict]:
-        """Ensure sample is subset of rows."""
+        """Проверить, что sample не длиннее rows."""
         if "rows" in info.data and v and info.data["rows"]:
             sample_len = len(v)
             rows_len = len(info.data["rows"])
@@ -55,7 +55,7 @@ class DtoPayload(BaseModel):
         return v
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Convert DTO payload to pandas DataFrame using rows and columns."""
+        """Преобразовать DTO payload в pandas DataFrame по rows и columns."""
         if self.rows:
             return pd.DataFrame(self.rows)
         if self.columns:
@@ -63,7 +63,7 @@ class DtoPayload(BaseModel):
         return pd.DataFrame()
 
     def get_summary(self, dto_name: str, max_len: int = 100) -> DtoSummary:
-        """Create a DtoSummary view of this payload (truncates sample if needed)."""
+        """Создать DtoSummary и при необходимости обрезать sample."""
         truncated_sample = self.sample
         if isinstance(truncated_sample, list):
             import json
@@ -80,10 +80,10 @@ class DtoPayload(BaseModel):
 
 
 class DtoSummary(BaseModel):
-    """Brief summary of a DTO for listing and quick preview.
-    
-    Used by list_dtos and similar tools to show available data without
-    transferring full row data. Sample may be truncated for size.
+    """Краткая сводка DTO для списков и быстрого просмотра.
+
+    Используется list_dtos и похожими инструментами, чтобы показать доступные
+    данные без передачи полного rows. Sample может быть обрезан по длине.
     """
 
     dto_name: str
@@ -92,7 +92,7 @@ class DtoSummary(BaseModel):
     num_rows: int
     sample: list[dict[str, Any]] | str = Field(
         default_factory=list,
-        description="Sample rows (list) or truncated preview (str)"
+        description="Пример строк списком или обрезанная строковая версия sample"
     )
 
     model_config = {"arbitrary_types_allowed": True}

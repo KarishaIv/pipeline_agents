@@ -21,7 +21,7 @@ QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
 # Paths and timeouts
-CHARTS_DIR: Path = PROJECT_ROOT / "charts"
+CHARTS_DIR: Path = PROJECT_ROOT / "data" / "charts"
 CHECKPOINT_DB_PATH: Path = PROJECT_ROOT / "data" / "meta_agent_checkpoints.sqlite3"
 CODE_TIMEOUT = 30
 

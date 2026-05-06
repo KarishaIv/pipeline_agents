@@ -102,15 +102,18 @@ def test_sanitize_filename_empty_returns_default(chart_service):
 
 
 def test_save_chart_creates_file(chart_service):
-    """Test save_chart creates file and returns path."""
+    """Test save_chart creates file and returns path with metadata."""
     # Create a simple figure
     fig, ax = plt.subplots()
     ax.plot([1, 2, 3], [1, 2, 3])
 
-    path = chart_service.save_chart("test_chart.png")
+    path, metadata = chart_service.save_chart("test_chart.png")
 
     assert Path(path).exists()
     assert "test_chart.png" in path
+    assert isinstance(metadata, dict)
+    assert "id" in metadata
+    assert "kind" in metadata
 
 
 def test_save_chart_auto_filename(chart_service):
@@ -118,7 +121,7 @@ def test_save_chart_auto_filename(chart_service):
     fig, ax = plt.subplots()
     ax.plot([1, 2, 3], [1, 2, 3])
 
-    path = chart_service.save_chart(None)
+    path, metadata = chart_service.save_chart(None)
 
     assert Path(path).exists()
     assert path.endswith(".png")
@@ -129,8 +132,8 @@ def test_save_chart_with_timestamp_default(chart_service):
     fig, ax = plt.subplots()
     ax.plot([1, 2, 3])
 
-    path1 = chart_service.save_chart()
-    path2 = chart_service.save_chart()
+    path1, meta1 = chart_service.save_chart()
+    path2, meta2 = chart_service.save_chart()
 
     # Should create different files with different timestamps
     assert Path(path1).exists()
@@ -155,7 +158,7 @@ def test_save_chart_within_charts_dir(chart_service):
     fig, ax = plt.subplots()
     ax.plot([1, 2, 3])
 
-    path = chart_service.save_chart("chart.png")
+    path, metadata = chart_service.save_chart("chart.png")
 
     resolved_chart_path = Path(path).resolve()
     resolved_charts_dir = chart_service.charts_dir.resolve()
@@ -169,7 +172,7 @@ def test_save_chart_fallback_on_path_traversal_attempt(chart_service):
     ax.plot([1, 2, 3])
 
     # Attempt path traversal (should be sanitized to safe name)
-    path = chart_service.save_chart("../../../evil.png")
+    path, metadata = chart_service.save_chart("../../../evil.png")
 
     # Should save with fallback safe name instead
     assert "evil" not in path or "fallback" in path
@@ -204,7 +207,7 @@ def test_save_chart_multiple_formats(chart_service):
         fig, ax = plt.subplots()
         ax.plot([1, 2, 3])
 
-        path = chart_service.save_chart(f"chart.{ext}")
+        path, metadata = chart_service.save_chart(f"chart.{ext}")
 
         assert Path(path).exists()
         assert path.endswith(ext)

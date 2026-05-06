@@ -113,12 +113,12 @@ def test_config_env_overrides(monkeypatch):
 
 
 def test_config_charts_dir_resolution():
-    """Test CHARTS_DIR uses PROJECT_ROOT."""
+    """Test CHARTS_DIR uses the data directory under PROJECT_ROOT."""
     from config import PROJECT_ROOT
     from src.meta_agent.configs import CHARTS_DIR
 
-    assert CHARTS_DIR == PROJECT_ROOT / "charts"
-    assert CHARTS_DIR.parent.name != "charts"  # is under root
+    assert CHARTS_DIR == PROJECT_ROOT / "data" / "charts"
+    assert CHARTS_DIR.parent.name == "data"
 
 
 @pytest.mark.parametrize("collection", AVAILABLE_COLLECTIONS)

@@ -65,22 +65,22 @@ def mock_openai_client(mocker):
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.choices = [MagicMock(message=MagicMock(content="test response"))]
-    
+
     # Create AsyncMock that returns a test response by default
     # Tests can override by setting return_value or side_effect
     create_mock = AsyncMock(return_value=mock_response)
-    
+
     mock_client.chat = MagicMock()
     mock_client.chat.completions = MagicMock()
     mock_client.chat.completions.create = create_mock
-    
+
     # Patch the factory functions where they're USED
     mocker.patch("src.utils.make_openai_client", return_value=mock_client)
     mocker.patch("src.utils.make_openai_sync_client", return_value=mock_client)
     mocker.patch("src.meta_agent.tools.analyzer_tools.make_openai_client", return_value=mock_client)
     mocker.patch("src.meta_agent.utils.history.make_openai_client", return_value=mock_client)
     mocker.patch("src.meta_agent.agent_factory.make_openai_client", return_value=mock_client)
-    
+
     return mock_client
 
 
@@ -118,7 +118,7 @@ def mock_sqlite_saver(tmp_path):
 def reset_qdrant_singleton():
     """Reset QdrantService singleton before and after each test to prevent mock leaks."""
     from src.meta_agent.services.qdrant import QdrantService
-    
+
     # Reset before test
     QdrantService._instance = None
     yield

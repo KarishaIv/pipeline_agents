@@ -190,7 +190,7 @@ async def test_qdrant_retrieve_tool_exception_returns_failure_payload(mock_qdran
     """Test retrieve_by_id wraps service exceptions into failure_payload."""
     tool = QdrantRetrieveTool(reasoning="Need id", collection="personas", ids=["u1"])
     mock_qdrant_service.retrieve_by_id.side_effect = RuntimeError("retrieve failed")
-    
+
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
     assert payload["success"] is False

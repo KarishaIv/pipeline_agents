@@ -53,7 +53,7 @@ async def test_compute_stats_tool_without_numeric_columns_returns_error(mocker):
         rows=[{"text": "a"}, {"text": "b"}],
     )
     mocker.patch(
-        "meta_agent.tools.analyzer_tools.resolve_dto_or_error",
+        "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
         return_value=(pd.DataFrame([{"text": "a"}, {"text": "b"}]), test_payload, None),
     )
     tool = ComputeStatsTool(reasoning="Try stats on text only", dto_name="text_dto")
@@ -142,7 +142,7 @@ async def test_create_chart_tool_scatter_requires_numeric_columns(mocker):
     )
     df = pd.DataFrame([{"label": "a"}, {"label": "b"}])
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, test_payload, None))
-    
+
     tool = CreateChartTool(reasoning="Scatter fail", dto_name="test_dto", chart_type="scatter", title="Scatter")
     result = await tool(MagicMock(), MagicMock())
     payload = json.loads(result)
@@ -201,7 +201,7 @@ async def test_summarize_texts_tool_returns_error_when_no_text(mock_openai_clien
     )
     # Provide an empty DataFrame to test error case
     mocker.patch(
-        "meta_agent.tools.analyzer_tools.resolve_dto_or_error",
+        "src.meta_agent.tools.analyzer_tools.resolve_dto_or_error",
         return_value=(pd.DataFrame(), test_payload, None),
     )
     tool = SummarizeTextsTool(reasoning="Try summary", dto_name="test_dto", text_columns=["text"])

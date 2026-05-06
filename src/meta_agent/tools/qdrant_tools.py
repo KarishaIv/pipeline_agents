@@ -28,8 +28,6 @@ def failure_payload(operation: str, exc: Exception | str | None = None) -> str:
     Все ошибки (включая из QdrantService) обрабатываются здесь
     и возвращаются в стандартизированном формате JSON
     с полями error, operation и detail.
-    
-    Wrapper for backward compatibility; use json_error directly in new code.
     """
     if isinstance(exc, str) or exc is None:
         exc = RuntimeError(str(exc) if exc else "unknown qdrant error")
@@ -43,7 +41,7 @@ def failure_payload(operation: str, exc: Exception | str | None = None) -> str:
 
 
 def get_qdrant_service() -> QdrantService:
-    """Return the singleton QdrantService instance."""
+    """Вернуть singleton-экземпляр QdrantService."""
     return QdrantService()
 
 
@@ -107,16 +105,19 @@ class QdrantSearchTool(BaseTool):
     """Семантический поиск по коллекции Qdrant (векторное сходство)."""
 
     tool_name = "search"
-    description = "Семантический поиск по коллекции Qdrant по текстовому запросу (векторное сходство)."
+    description = (
+        "Выполнить семантический поиск по текстовому запросу в выбранной коллекции Qdrant "
+        "и зарегистрировать найденные точки как DTO."
+    )
 
-    reasoning: str = Field(description="Зачем нужен этот поиск")
+    reasoning: str = Field(description="Зачем нужен этот семантический поиск")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
     query: str = Field(description="Поисковая фраза на естественном языке")
     vector_name: str = Field(
         default="embedding",
         description="Имя вектора для поиска (из схемы коллекции).",
     )
-    limit: int = Field(default=5, description="Максимальное количество возвращаемых результатов")
+    limit: int = Field(default=5, description="Максимальное количество точек для регистрации в DTO")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
@@ -144,13 +145,16 @@ class QdrantFilterTool(BaseTool):
     """Отобрать точки коллекции по точному совпадению значения поля payload."""
 
     tool_name = "filter_points"
-    description = "Отобрать точки коллекции по точному совпадению значения поля payload."
+    description = (
+        "Отобрать точки коллекции по точному совпадению значения payload-поля "
+        "и зарегистрировать результат как DTO."
+    )
 
     reasoning: str = Field(description="Зачем нужна эта фильтрация")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
     field: str = Field(description='Имя поля payload для фильтра (например "question", "name")')
     value: str = Field(description="Ожидаемое точное значение поля")
-    limit: int = Field(default=10, description="Максимальное количество возвращаемых результатов")
+    limit: int = Field(default=10, description="Максимальное количество точек для регистрации в DTO")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
@@ -179,26 +183,26 @@ class QdrantScrollTool(BaseTool):
 
     tool_name = "scroll_points"
     description = (
-        "Постраничный обход точек коллекции Qdrant. "
-        "Можно вернуть только указанные поля payload (payload_fields) "
-        "и отфильтровать по точному совпадению поля (filter_field и filter_value)."
+        "Получить одну страницу точек коллекции Qdrant, при необходимости ограничить payload_fields "
+        "и применить точный фильтр filter_field/filter_value. Инструмент регистрирует точки страницы как DTO; "
+        "служебный next_offset передаётся в метаданные DTO."
     )
 
-    reasoning: str = Field(description="Зачем нужен постраничный обход")
+    reasoning: str = Field(description="Зачем нужна эта страница точек")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    limit: int = Field(default=10, description="Размер страницы")
-    offset: Optional[str] = Field(default=None, description="Смещение из предыдущего scroll")
+    limit: int = Field(default=10, description="Размер запрашиваемой страницы")
+    offset: Optional[str] = Field(default=None, description="Смещение страницы, если оно заранее известно")
     payload_fields: List[str] = Field(
         default_factory=list,
-        description="Список полей payload для возврата (пустой — все поля)",
+        description="Список payload-полей для включения в точки DTO; пустой список означает все поля",
     )
     filter_field: Optional[str] = Field(
         default=None,
-        description="Имя поля payload для фильтра (точное совпадение). Задавай вместе с filter_value.",
+        description="Имя payload-поля для точного фильтра; задавай вместе с filter_value.",
     )
     filter_value: Optional[str] = Field(
         default=None,
-        description="Значение, которому должно равняться значение из поля filter_field.",
+        description="Значение, которому должно равняться значение payload-поля filter_field.",
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
@@ -213,12 +217,13 @@ class QdrantScrollTool(BaseTool):
                 filter_value=self.filter_value,
             )
             points = result.get("points", []) if isinstance(result, dict) else []
+            next_offset = result.get("next_offset", None) if isinstance(result, dict) else None
             dto_name, dto_payload = register_dto(
                 context,
                 source=f"scroll_{self.collection}",
                 data=points,
                 summary_text=f"Scroll {self.collection} (limit={self.limit})",
-                meta={"limit": self.limit, "offset": self.offset},
+                meta={"limit": self.limit, "offset": self.offset, "next_offset": next_offset},
             )
             return serialize_tool_result(dto_summary_view(dto_name, dto_payload))
         except Exception as exc:
@@ -230,7 +235,10 @@ class QdrantRetrieveTool(BaseTool):
     """Получить точки коллекции по списку идентификаторов (строки UUID)."""
 
     tool_name = "retrieve_by_id"
-    description = "Получить указанные точки из коллекции Qdrant по их идентификаторам (строки UUID)."
+    description = (
+        "Получить указанные точки из коллекции Qdrant по строковым UUID-идентификаторам "
+        "и зарегистрировать результат как DTO."
+    )
 
     reasoning: str = Field(description="Зачем нужно получить именно эти точки")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)

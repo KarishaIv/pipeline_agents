@@ -61,6 +61,7 @@ async def test_handle_new_command(message_handler):
         user_key="chat_123_user_456",
         name="my_work_session",
         is_active=True,
+        has_messages=False,
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
@@ -100,18 +101,20 @@ async def test_handle_question_new_session(message_handler):
 
     # No active session initially
     message_handler.session_store.get_active_session = MagicMock(return_value=None)
-    
-    # Mock session creation
+
+    # Mock session creation with auto-generated thread_id
+    generated_thread_id = "test-thread-uuid7"
     mock_session = Session(
-        thread_id="-1",
+        thread_id=generated_thread_id,
         user_key="chat_123_user_456",
         name="default",
         is_active=True,
+        has_messages=False,
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
     message_handler.session_store.create_session = MagicMock(return_value=mock_session)
-    
+
     mock_response = MetaAgentApiResponse(
         thread_id="new-thread-1", outputs=[TextOutput(text="Status is good")]
     )
@@ -121,8 +124,9 @@ async def test_handle_question_new_session(message_handler):
 
     message_handler.telegram.send_chat_action.assert_called_once_with(123, "typing")
     message_handler.session_store.create_session.assert_called_once()
-    message_handler.meta_agent.ask.assert_called_once_with("What is the status?", None)
-    message_handler.session_store.replace_thread_id.assert_called_once_with(123, 456, "-1", "new-thread-1")
+    message_handler.meta_agent.ask.assert_called_once_with("What is the status?", generated_thread_id)
+    # No replace_thread_id should be called since thread_id is already generated
+    message_handler.session_store.replace_thread_id.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -141,11 +145,12 @@ async def test_handle_question_existing_session(message_handler):
         user_key="chat_123_user_456",
         name="default",
         is_active=True,
+        has_messages=False,
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
     message_handler.session_store.get_active_session = MagicMock(return_value=mock_session)
-    
+
     mock_response = MetaAgentApiResponse(
         thread_id="existing-thread", outputs=[TextOutput(text="More details")]
     )

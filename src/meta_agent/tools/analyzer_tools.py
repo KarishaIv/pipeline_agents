@@ -26,6 +26,7 @@ from src.utils import make_openai_client
 from src.meta_agent.configs import CHARTS_DIR
 from src.meta_agent.tools.dto_tools import dto_summary_view, resolve_dto_or_error
 from src.meta_agent.utils.json_responses import json_error, serialize_tool_result
+from src.meta_agent.output_models import AgentArtifact
 
 if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
@@ -94,7 +95,8 @@ class CreateChartTool(BaseTool):
 
     tool_name = "create_chart"
     description = (
-        "Построить и сохранить график matplotlib (bar, line, scatter, histogram, pie, box, heatmap) по данным DTO."
+        "Построить matplotlib-график по данным DTO, сохранить PNG через ChartService "
+        "и зарегистрировать созданный файл как артефакт агента."
     )
 
     reasoning: str = Field(description="Что показывает график и зачем он нужен")
@@ -103,13 +105,13 @@ class CreateChartTool(BaseTool):
     )
     dto_name: str = Field(description="Имя DTO, по которому строится график")
     title: str = Field(description="Заголовок графика")
-    x_column: str = Field(default="", description="Столбец для оси X / подписей")
-    y_column: str = Field(default="", description="Столбец для оси Y / значений")
+    x_column: str = Field(default="", description="Столбец для оси X или подписей; пусто — выбрать автоматически")
+    y_column: str = Field(default="", description="Столбец для оси Y или значений; пусто — выбрать автоматически")
     x_label: str = Field(default="", description="Подпись оси X")
     y_label: str = Field(default="", description="Подпись оси Y")
 
     def _validate_chart_inputs(self, df: pd.DataFrame) -> str | None:
-        """Validate chart inputs and return error JSON if invalid, None if OK."""
+        """Проверить входные данные графика; вернуть JSON-ошибку или None."""
         if df.empty:
             return json_error("DTO пуст или содержит 0 строк", error_type="validation_error")
 
@@ -213,6 +215,9 @@ class CreateChartTool(BaseTool):
         CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
         try:
+            from src.meta_agent.services.chart import ChartService
+
+            chart_service = ChartService(CHARTS_DIR)
             fig, ax = plt.subplots(figsize=(10, 6))
 
             match self.chart_type:
@@ -265,13 +270,31 @@ class CreateChartTool(BaseTool):
                 ax.set_ylabel(self.y_label)
 
             plt.tight_layout()
-            filename = f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
-            path = str(CHARTS_DIR / filename)
-            plt.savefig(path, bbox_inches="tight", dpi=150)
-            plt.close(fig)
+
+            # Сохраняем через сервис, чтобы получить единый формат метаданных.
+            chart_path, artifact_metadata = chart_service.save_chart()
+
+            if not hasattr(context, 'custom_context'):
+                context.custom_context = {}
+            if 'artifacts' not in context.custom_context:
+                context.custom_context['artifacts'] = []
+
+            artifact_metadata['chart_type'] = self.chart_type
+            artifact_metadata['dto_name'] = self.dto_name
+            agent_artifact = AgentArtifact(
+                id=artifact_metadata['id'],
+                kind=artifact_metadata['kind'],
+                path=artifact_metadata['path'],
+                filename=artifact_metadata['filename'],
+                mime_type=artifact_metadata['mime_type'],
+                caption=self.title,
+                metadata=artifact_metadata['metadata'] | {'chart_type': self.chart_type, 'dto_name': self.dto_name}
+            )
+
+            context.custom_context['artifacts'].append(agent_artifact)
 
             return serialize_tool_result({
-                "chart_saved": path,
+                "chart_saved": chart_path,
                 "title": self.title,
                 "type": self.chart_type,
                 "dto": dto_summary_view(self.dto_name, dto_payload),
@@ -295,8 +318,8 @@ class SummarizeTextsTool(BaseTool):
     tool_name = "summarize_texts"
     description = (
         "Извлечь тексты из DTO, отправить их в языковую модель с инструкцией и получить "
-        "краткое резюме или список инсайтов."
-        "Применяй для рассуждений агентов, ответов респондентов и любых текстовых корпусов. "
+        "краткое резюме или список инсайтов. "
+        "Если text_columns не заданы, используются object-колонки; если их нет, строки DTO передаются как JSON. "
         "Вызывай по dto_name, а не передавай полный массив текстов в аргументах."
     )
 
@@ -308,7 +331,7 @@ class SummarizeTextsTool(BaseTool):
         default_factory=list,
         description=(
             "Список колонок DTO, содержащих текст. "
-            "Если пусто, берутся все строковые колонки."
+            "Если пусто, берутся object-колонки; если их нет, используется JSON каждой строки."
         ),
     )
     max_items: int = Field(

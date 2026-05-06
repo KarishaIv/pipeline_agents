@@ -24,13 +24,13 @@ class AnalyzerRoute(str, Enum):
 
 def route_supervisor(state: dict | Any) -> str:
     """Определяет следующий узел по решению супервайзера (next_worker из состояния).
-    
+
     Validates the route against SupervisorRoute enum and logs errors for invalid routes.
     Defaults to END if invalid.
     """
     state = state_to_dict(state)
     next_worker = state.get("next_worker", "end")
-    
+
     try:
         validated = SupervisorRoute(next_worker)
         return validated.value
@@ -41,12 +41,12 @@ def route_supervisor(state: dict | Any) -> str:
 
 def route_analyzer(state: dict | Any) -> str:
     """Определяет следующий узел после analyzer: code_writer или supervisor.
-    
+
     Validates the route against AnalyzerRoute enum.
     """
     state = state_to_dict(state)
     next_worker = state.get("next_worker", "supervisor")
-    
+
     try:
         validated = AnalyzerRoute(next_worker)
         return validated.value

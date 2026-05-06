@@ -1,6 +1,6 @@
 """Test to investigate how LangGraph's checkpointer handles DtoPayload serialization.
 
-This test uses the actual SqliteSaver to see if the issue happens during 
+This test uses the actual SqliteSaver to see if the issue happens during
 checkpoint storage/retrieval.
 """
 
@@ -19,7 +19,7 @@ from src.meta_agent.utils.state import MetaAgentState
 
 def test_model_dump_converts_dto_to_dict():
     """Test that model_dump() converts DtoPayload objects to dicts.
-    
+
     This is KEY: model_dump() is lossy for DtoPayload objects.
     """
     # Create a MetaAgentState with DtoPayload
@@ -56,14 +56,14 @@ def test_model_dump_converts_dto_to_dict():
 
     # The issue: model_dump converts to dict!
     assert isinstance(state_dict["dto_store"]["test_dto"], dict), "model_dump should convert to dict"
-    
+
     # But can we get it back?
     reconstructed = MetaAgentState.model_validate(state_dict)
     dto_item = reconstructed.dto_store.get("test_dto")
     print(f"\nAfter model_validate on dumped state:")
     print(f"  reconstructed.dto_store['test_dto'] type: {type(dto_item)}")
     print(f"  Is DtoPayload? {isinstance(dto_item, DtoPayload)}")
-    
+
     # This should work since Pydantic validates
     assert isinstance(dto_item, DtoPayload), "model_validate should reconstruct DtoPayload"
 

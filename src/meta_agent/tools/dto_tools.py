@@ -25,7 +25,9 @@ def _ensure_context_dict(context: "AgentContext") -> dict:
     if context.custom_context is None:
         context.custom_context = {}
     elif not isinstance(context.custom_context, dict):
-        context.custom_context = {"legacy_context": context.custom_context}
+        raise TypeError(
+            f"AgentContext.custom_context must be a dict or None, got {type(context.custom_context).__name__}"
+        )
     return context.custom_context
 
 

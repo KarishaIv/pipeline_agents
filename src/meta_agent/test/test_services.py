@@ -83,7 +83,7 @@ def test_qdrant_service_retrieve_by_id_success_and_not_found():
         mock_client.retrieve.return_value = [point]
         mock_client_class.return_value = mock_client
         service = QdrantService()
-        
+
         result = service.retrieve_by_id("personas", ["u1"])
         assert result == [{"id": "u1", "score": None, "payload": {"k": "v"}}]
 

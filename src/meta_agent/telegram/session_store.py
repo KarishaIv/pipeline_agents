@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.meta_agent.utils.thread_ids import generate_thread_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +20,7 @@ class Session:
     user_key: str
     name: str
     is_active: bool
+    has_messages: bool
     created_at: datetime
     updated_at: datetime
 
@@ -29,8 +32,9 @@ class Session:
             user_key=row[1],
             name=row[2],
             is_active=bool(row[3]),
-            created_at=datetime.fromisoformat(row[4]),
-            updated_at=datetime.fromisoformat(row[5]),
+            has_messages=bool(row[4]),
+            created_at=datetime.fromisoformat(row[5]),
+            updated_at=datetime.fromisoformat(row[6]),
         )
 
 
@@ -68,6 +72,7 @@ class TelegramSessionStore:
                     user_key TEXT NOT NULL,
                     name TEXT NOT NULL,
                     is_active INTEGER DEFAULT 0,
+                    has_messages BOOLEAN DEFAULT 0,
                     created_at TEXT DEFAULT (datetime('now')),
                     updated_at TEXT DEFAULT (datetime('now')),
                     UNIQUE(user_key, name)
@@ -76,7 +81,7 @@ class TelegramSessionStore:
             )
             conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_user_active 
+                CREATE INDEX IF NOT EXISTS idx_user_active
                 ON sessions(user_key, is_active)
                 """
             )
@@ -168,7 +173,7 @@ class TelegramSessionStore:
         Args:
             chat_id: Telegram chat ID.
             user_id: Telegram user ID.
-            thread_id: Meta-agent thread ID.
+            thread_id: Meta-agent thread ID. If not provided, generates a new UUID.
             name: Session name.
             activate: Whether to make this the active session.
 
@@ -179,6 +184,34 @@ class TelegramSessionStore:
 
         conn = self._get_conn()
         try:
+            cursor = conn.execute(
+                "SELECT * FROM sessions WHERE user_key = ? AND name = ?",
+                (user_key, name),
+            )
+            existing_row = cursor.fetchone()
+            if existing_row:
+                if activate:
+                    conn.execute("UPDATE sessions SET is_active = 0 WHERE user_key = ?", (user_key,))
+                    conn.execute(
+                        """
+                        UPDATE sessions
+                        SET is_active = 1, updated_at = datetime('now')
+                        WHERE user_key = ? AND name = ?
+                        """,
+                        (user_key, name),
+                    )
+                    conn.commit()
+                    cursor = conn.execute(
+                        "SELECT * FROM sessions WHERE user_key = ? AND name = ?",
+                        (user_key, name),
+                    )
+                    existing_row = cursor.fetchone()
+                return Session.from_row(tuple(existing_row))
+
+            # If no thread_id provided, generate a new one
+            if not thread_id:
+                thread_id = generate_thread_id()
+
             if activate:
                 # Deactivate all other sessions for this user
                 conn.execute(
@@ -188,10 +221,10 @@ class TelegramSessionStore:
 
             conn.execute(
                 """
-                INSERT INTO sessions (thread_id, user_key, name, is_active)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO sessions (thread_id, user_key, name, is_active, has_messages)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (thread_id, user_key, name, 1 if activate else 0),
+                (thread_id, user_key, name, 1 if activate else 0, 0),
             )
             conn.commit()
 
@@ -232,7 +265,7 @@ class TelegramSessionStore:
             # Activate target session
             conn.execute(
                 """
-                UPDATE sessions 
+                UPDATE sessions
                 SET is_active = 1, updated_at = datetime('now')
                 WHERE user_key = ? AND name = ?
                 """,
@@ -240,7 +273,13 @@ class TelegramSessionStore:
             )
             conn.commit()
 
-            return Session.from_row(tuple(row))
+            # Re-fetch the updated row to get correct is_active state
+            cursor = conn.execute(
+                "SELECT * FROM sessions WHERE user_key = ? AND name = ?",
+                (user_key, name),
+            )
+            updated_row = cursor.fetchone()
+            return Session.from_row(tuple(updated_row)) if updated_row else None
         finally:
             conn.close()
 
@@ -287,6 +326,30 @@ class TelegramSessionStore:
             )
             conn.commit()
             return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def mark_session_has_messages(self, chat_id: int, user_id: int, thread_id: str) -> None:
+        """Mark a session as having received messages.
+
+        Args:
+            chat_id: Telegram chat ID.
+            user_id: Telegram user ID.
+            thread_id: Session thread ID.
+        """
+        user_key = self._get_user_key(chat_id, user_id)
+
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET has_messages = 1, updated_at = datetime('now')
+                WHERE thread_id = ? AND user_key = ?
+                """,
+                (thread_id, user_key),
+            )
+            conn.commit()
         finally:
             conn.close()
 

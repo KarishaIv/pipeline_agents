@@ -12,7 +12,7 @@ from src.meta_agent.utils.state import merge_dto_store
 
 def test_merge_dto_store_converts_dict_to_dtopayload():
     """Test that merge_dto_store converts dict values to DtoPayload.
-    
+
     This is a regression test for the bug where merge_dto_store would preserve
     dict objects instead of converting them to DtoPayload, causing
     AttributeError: 'dict' object has no attribute 'get_summary'

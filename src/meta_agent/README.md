@@ -128,7 +128,7 @@ uvicorn src.scripts.serve_meta_agent:app --host 0.0.0.0 --port 8000
 Пример запроса:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/ask \
+curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "Какие сегменты чаще соглашаются на кредит?"}'
 ```
@@ -158,7 +158,7 @@ curl -X POST http://127.0.0.1:8000/ask \
 Пример продолжения диалога:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/ask \
+curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "А теперь только по молодежной аудитории", "thread_id": "<thread-id>"}'
 ```
@@ -178,7 +178,7 @@ curl -X POST http://127.0.0.1:8000/ask \
 TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
 META_AGENT_API_URL=http://localhost:8000
 TELEGRAM_POLL_TIMEOUT=30
-TELEGRAM_REQUEST_TIMEOUT=60
+TELEGRAM_REQUEST_TIMEOUT=300
 TELEGRAM_SESSION_DB_PATH=data/telegram_sessions.sqlite3
 TELEGRAM_THREAD_SCOPE=chat
 ```

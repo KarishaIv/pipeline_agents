@@ -139,4 +139,3 @@ class QdrantService:
             "payload_schema": getattr(info, "payload_schema", {}),
             "vectors": getattr(info, "vectors", {}),
         }
-

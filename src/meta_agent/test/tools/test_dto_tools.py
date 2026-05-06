@@ -64,11 +64,13 @@ def test_dto_store_helpers():
     set_dto_store(mock_context, test_store)
     assert mock_context.custom_context[DTO_STORE_KEY] == test_store
 
-    # Legacy non-dict context
-    mock_context2 = MagicMock()
-    mock_context2.custom_context = "legacy_string"
-    store2 = get_dto_store(mock_context2)
-    assert isinstance(store2, dict)
+    # Strict validation for custom_context type (no legacy coercion)
+    mock_invalid = MagicMock()
+    mock_invalid.custom_context = "legacy_string"
+    with pytest.raises(
+        TypeError, match="AgentContext.custom_context must be a dict or None"
+    ):
+        get_dto_store(mock_invalid)
 
 
 def test_register_dto_and_summary(sample_dto_data):

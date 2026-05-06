@@ -7,7 +7,7 @@ import httpx
 class TelegramBotClient:
     """Async HTTP client for Telegram Bot API."""
 
-    def __init__(self, token: str, request_timeout: float = 60.0):
+    def __init__(self, token: str, request_timeout: float = 300.0):
         """Initialize Telegram client.
 
         Args:
@@ -57,6 +57,7 @@ class TelegramBotClient:
         text: str,
         parse_mode: str | None = "HTML",
         reply_to_message_id: Optional[int] = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send a text message.
 
@@ -65,6 +66,7 @@ class TelegramBotClient:
             text: Message text.
             parse_mode: Parse mode (HTML, Markdown, etc.).
             reply_to_message_id: Optional message ID to reply to.
+            reply_markup: Optional keyboard markup (ReplyKeyboardMarkup, etc.).
 
         Returns:
             Telegram message object.
@@ -77,6 +79,8 @@ class TelegramBotClient:
             payload["parse_mode"] = parse_mode
         if reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         response = await self.client.post(
             f"{self.base_url}/sendMessage",
@@ -138,3 +142,78 @@ class TelegramBotClient:
         response.raise_for_status()
         data = response.json()
         return data.get("result", {})
+
+    async def send_photo(
+        self,
+        chat_id: int | str,
+        content: bytes,
+        filename: str,
+        mime_type: str = "image/png",
+        caption: Optional[str] = None,
+        reply_to_message_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Send a photo using multipart file upload.
+
+        Args:
+            chat_id: Telegram chat ID.
+            content: Binary content of the photo.
+            filename: Filename for the photo (used by Telegram).
+            mime_type: MIME type of the photo (default: image/png).
+            caption: Optional caption.
+            reply_to_message_id: Optional message ID to reply to.
+
+        Returns:
+            Telegram message object.
+        """
+        data = {
+            "chat_id": chat_id,
+        }
+        if caption:
+            data["caption"] = caption
+            data["parse_mode"] = "HTML"
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+
+        files = {
+            "photo": (filename, content, mime_type),
+        }
+
+        response = await self.client.post(
+            f"{self.base_url}/sendPhoto",
+            data=data,
+            files=files,
+        )
+        response.raise_for_status()
+        data_result = response.json()
+        return data_result.get("result", {})
+
+    async def answer_callback_query(
+        self,
+        callback_id: str,
+        text: Optional[str] = None,
+        show_alert: bool = False,
+    ) -> bool:
+        """Answer a callback query.
+
+        Args:
+            callback_id: Callback query ID.
+            text: Optional notification text.
+            show_alert: If True, show as alert instead of notification.
+
+        Returns:
+            True if successful.
+        """
+        payload = {
+            "callback_query_id": callback_id,
+        }
+        if text:
+            payload["text"] = text
+        if show_alert:
+            payload["show_alert"] = show_alert
+
+        response = await self.client.post(
+            f"{self.base_url}/answerCallbackQuery",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json().get("ok", False)

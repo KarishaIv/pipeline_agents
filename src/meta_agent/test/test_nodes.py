@@ -87,7 +87,7 @@ async def test_supervisor_node_max_iterations(meta_state, mocker):
 
     assert result["next_worker"] == "end"
     assert result["iterations"] == MAX_SUPERVISOR_ITERATIONS + 2
-    assert result.get("answer")
+    assert result.get("outputs")
 
 
 @pytest.mark.asyncio
@@ -250,7 +250,8 @@ async def test_supervisor_node_non_json_fallback(mock_run_agent, meta_state, moc
     result = await supervisor_node(state, MagicMock())
 
     assert result["next_worker"] == "end"
-    assert result["answer"] == plain_output
+    assert len(result["outputs"]) == 1
+    assert result["outputs"][0]["text"] == plain_output
     assert result["iterations"] == 4
     assert len(result.get("history", [])) == 1
     assert result["history"][0]["role"] == "supervisor"

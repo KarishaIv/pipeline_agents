@@ -49,7 +49,7 @@ def make_agent(
     model: str | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> ToolCallingAgent:
-    """Создать экземпляр ToolCallingAgent на базе Yandex LLM. 
+    """Создать экземпляр ToolCallingAgent на базе Yandex LLM.
     initial_custom_context is set via private API
     """
     api_key = os.getenv("YANDEX_API_KEY", "")
@@ -126,5 +126,5 @@ async def run_agent(
         # Return JSON error string as output (nodes handle via fallback logic)
         error_output = json_error(str(exc), error_type="agent_exception")
         context = _safe_get_custom_context(agent) or initial_custom_context
-        
+
         return AgentRunResult(output=error_output, context=context)

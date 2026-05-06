@@ -1,12 +1,13 @@
-"""Инструменты агента code_writer: валидация и безопасное выполнение Python-кода.
+"""Инструменты агента code_writer: статическая проверка и выполнение Python-кода.
 
-Tools for code validation and execution. Delegates execution logic to CodeExecutionService
-and chart management to ChartService for separation of concerns.
+Выполнение делегируется CodeExecutionService, который запускает код в отдельном
+процессе, ограничивает время работы и собирает stdout/stderr.
 """
 
 from __future__ import annotations
 
 import ast
+import logging
 from typing import Any, TYPE_CHECKING
 
 from pydantic import Field
@@ -21,26 +22,30 @@ if TYPE_CHECKING:
     from sgr_agent_core.models import AgentContext
     from sgr_agent_core.agent_definition import AgentConfig
 
+logger = logging.getLogger("meta_agent.code_writer")
+
 
 class ExecuteCodeTool(BaseTool):
-    """Безопасное выполнение Python-кода для code_writer.
+    """Выполнить Python-код для code_writer в сервисе исполнения.
 
-    Delegates code execution to CodeExecutionService which handles subprocess
-    isolation, timeout management, and output capture.
+    CodeExecutionService отвечает за отдельный процесс, timeout, передачу DTO
+    и сбор вывода. PNG-графики, созданные через save_chart(), регистрируются
+    как артефакты по недавно изменённым файлам в CHARTS_DIR.
     """
 
     tool_name = "execute_code"
     description = (
-        "Написать и безопасно выполнить код на Python для анализа. "
-        "В песочнице доступны: np (numpy), pd (pandas), plt (matplotlib), math, json, stats, save_chart(). "
-        "Нельзя читать/писать файлы и подключать внешние модули."
+        "Выполнить Python-код для анализа выбранного DTO через CodeExecutionService. "
+        "В коде доступны dto, df, np, pd, plt, math, json, stats и save_chart(). "
+        "stdout возвращается в output; stderr возвращается в error. PNG, созданные через save_chart(), "
+        "регистрируются как артефакты."
     )
 
     reasoning: str = Field(description="Что вычисляет код и зачем")
     dto_name: str = Field(description="Имя DTO, с которым нужно работать в коде")
     code: str = Field(
         description=(
-            "Корректный код на Python. Уже импортированы: np, pd, plt, math, json, stats. "
+            "Код Python для выполнения. Уже импортированы: np, pd, plt, math, json, stats. "
             "Также доступны dto (dict DTO) и df (DataFrame из DTO rows). "
             "Для сохранения графика используй save_chart('file.png'). Вывод — через print()."
         )
@@ -52,7 +57,6 @@ class ExecuteCodeTool(BaseTool):
             return error
         assert dto_payload is not None
 
-        # Create executor service with configuration
         executor = CodeExecutionService(
             config=CodeExecutionConfig(
                 timeout=CODE_TIMEOUT,
@@ -61,10 +65,8 @@ class ExecuteCodeTool(BaseTool):
             )
         )
 
-        # Execute code asynchronously
         result = await executor.execute_async(self.code)
 
-        # Format response
         output = result.stdout or "(нет вывода)"
         response: dict[str, Any] = {
             "dto_name": self.dto_name,
@@ -74,6 +76,35 @@ class ExecuteCodeTool(BaseTool):
         if result.stderr:
             response["error"] = result.stderr
 
+        from src.meta_agent.output_models import AgentArtifact
+        from uuid import uuid4
+        from pathlib import Path
+
+        if not hasattr(context, 'custom_context'):
+            context.custom_context = {}
+        if 'artifacts' not in context.custom_context:
+            context.custom_context['artifacts'] = []
+
+        # save_chart() сохраняет PNG в CHARTS_DIR; регистрируем недавно созданные файлы.
+        if "save_chart" in self.code and CHARTS_DIR.exists():
+            try:
+                import time as time_module
+                current_time = time_module.time()
+                for chart_file in CHARTS_DIR.glob("*.png"):
+                    if current_time - chart_file.stat().st_mtime < 10:
+                        artifact = AgentArtifact(
+                            id=str(uuid4()),
+                            kind="chart",
+                            path=str(chart_file),
+                            filename=chart_file.name,
+                            mime_type="image/png",
+                            caption=f"Chart: {chart_file.name}",
+                            metadata={"source": "code_execution"},
+                        )
+                        context.custom_context['artifacts'].append(artifact)
+            except Exception as e:
+                logger.warning("Failed to register chart artifacts from code execution: %s", e)
+
         return serialize_tool_result(response)
 
 
@@ -82,12 +113,12 @@ class ValidateCodeTool(BaseTool):
 
     tool_name = "validate_code"
     description = (
-        "Проверить корректность Python-кода без выполнения в песочнице. "
+        "Проверить корректность Python-кода без выполнения. "
         "Инструмент выполняет только синтаксические и базовые статические проверки. "
-        "Возвращает результат с is_runnable, ошибками и предупреждениями."
+        "Возвращает is_runnable=True при успешной компиляции, даже если найдены предупреждения."
     )
 
-    reasoning: str = Field(description="Зачем нужна проверка и на какие риски смотреть")
+    reasoning: str = Field(description="Зачем нужна статическая проверка и какие риски ожидаются")
     dto_name: str = Field(description="Имя DTO, с которым валидируется код")
     code: str = Field(description="Код Python только для статической проверки")
 
@@ -111,7 +142,7 @@ class ValidateCodeTool(BaseTool):
 
         try:
             tree = ast.parse(stripped, mode="exec")
-            
+
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
                     diagnostics["warnings"].append("Обнаружен импорт. В песочнице запрещены произвольные импорты.")

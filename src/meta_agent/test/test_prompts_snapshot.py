@@ -102,8 +102,8 @@ class TestPromptComponents:
             "SUPERVISOR_SYSTEM": "супервайзер",
             "EXTRACTOR_SYSTEM": "извлекатель",
             "ANALYZER_SYSTEM": "аналитик",
-            "CODE_WRITER_SYSTEM": "написания кода",
-            "HISTORY_SUMMARIZER_SYSTEM": "компрессии",
+            "CODE_WRITER_SYSTEM": "написания и выполнения",
+            "HISTORY_SUMMARIZER_SYSTEM": "сжатию истории",
         }
         prompts = {
             "SUPERVISOR_SYSTEM": SUPERVISOR_SYSTEM,

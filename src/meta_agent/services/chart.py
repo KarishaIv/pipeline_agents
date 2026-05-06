@@ -79,8 +79,8 @@ class ChartService:
 
         return sanitized
 
-    def save_chart(self, filename: Optional[str] = None) -> str:
-        """Save current matplotlib figure to disk.
+    def save_chart(self, filename: Optional[str] = None) -> tuple[str, dict]:
+        """Save current matplotlib figure to disk and return path with metadata.
 
         Handles filename sanitization, path security validation, and
         automatic fallback to safe filenames if security checks fail.
@@ -89,11 +89,18 @@ class ChartService:
             filename: Optional custom filename. If None, auto-generates timestamp-based name.
 
         Returns:
-            Absolute path to saved chart file.
+            Tuple of (absolute_path, artifact_metadata_dict) where metadata includes:
+            - id: unique identifier
+            - kind: "chart"
+            - path: full filesystem path
+            - filename: sanitized filename
+            - mime_type: "image/png"
 
         Raises:
             ChartSaveError: If figure cannot be saved due to I/O or security errors.
         """
+        from uuid import uuid4
+
         # Generate or sanitize filename
         if filename is None:
             filename = f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
@@ -105,8 +112,11 @@ class ChartService:
         # Security check: ensure resolved path is within charts directory
         try:
             resolved_path = target_path.resolve()
-            if not str(self.charts_dir.resolve()) in str(resolved_path):
-                # Path traversal attempt detected; use fallback safe name
+            # Use is_relative_to for proper path containment check
+            try:
+                resolved_path.relative_to(self.charts_dir.resolve())
+            except ValueError:
+                # Path is not relative to charts_dir - traversal attempt detected
                 safe_name = self._sanitize_filename("fallback.png")
                 target_path = self.charts_dir / safe_name
                 resolved_path = target_path.resolve()
@@ -120,4 +130,13 @@ class ChartService:
         except (OSError, PermissionError, ValueError) as e:
             raise ChartSaveError(f"Failed to save chart to {target_path}: {e}") from e
 
-        return str(target_path)
+        # Return path and artifact metadata
+        artifact_metadata = {
+            "id": str(uuid4()),
+            "kind": "chart",
+            "path": str(target_path),
+            "filename": safe_name,
+            "mime_type": "image/png",
+            "metadata": {},
+        }
+        return str(target_path), artifact_metadata

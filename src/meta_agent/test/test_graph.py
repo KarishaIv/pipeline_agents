@@ -70,19 +70,22 @@ async def test_manager_uses_disk_sqlite_checkpointer(tmp_path):
 @pytest.mark.asyncio
 async def test_meta_agent_graph_manager_invoke(meta_state, mocker):
     """Test MetaAgentGraphManager.invoke_graph_session and related methods."""
+    from src.meta_agent.output_models import TextOutput
+
     manager = MetaAgentGraphManager()
 
     # Mock the internal graph/session lifecycle
     mock_graph = MagicMock()
-    mock_graph.ainvoke = AsyncMock(return_value={"answer": "Test response", "history": []})
+    mock_graph.ainvoke = AsyncMock(return_value={"outputs": [TextOutput(text="Test response")], "history": []})
     manager._graph = mock_graph
     mocker.patch.object(manager, "_prepare_invoke", new=AsyncMock(return_value=({"configurable": {}}, {})))
-    mocker.patch.object(manager, "_finalize_invoke", new=AsyncMock(return_value="Test response"))
+    mocker.patch.object(manager, "_finalize_invoke", new=AsyncMock(return_value=[TextOutput(text="Test response")]))
 
     result = await manager.invoke_graph_session("What is the distribution of personas?", thread_id="test-123")
 
     assert isinstance(result, MetaAgentResult)
-    assert result.answer == "Test response"
+    assert len(result.outputs) == 1
+    assert result.outputs[0].text == "Test response"
     assert result.thread_id == "test-123"
 
 
@@ -95,13 +98,16 @@ def test_meta_graph_manager_singleton():
 @pytest.mark.asyncio
 async def test_prepare_and_finalize_invoke(meta_state, mocker):
     """Test public invoke methods and state update helpers indirectly."""
+    from src.meta_agent.output_models import TextOutput
+
     manager = MetaAgentGraphManager()
     manager._graph = MagicMock(ainvoke=AsyncMock(return_value={}))
     # Mock internal to avoid full execution for this test
     with patch.object(manager, "_prepare_invoke", new=AsyncMock(return_value=({"configurable": {}}, {}))):
-        with patch.object(manager, "_finalize_invoke", new=AsyncMock(return_value="Mocked answer")):
+        with patch.object(manager, "_finalize_invoke", new=AsyncMock(return_value=[TextOutput(text="Mocked answer")])):
             result = await manager.invoke_graph_session("test question", "test-thread")
-            assert result.answer == "Mocked answer"
+            assert len(result.outputs) == 1
+            assert result.outputs[0].text == "Mocked answer"
 
     # Test state helper directly (public)
     update = build_turn_state_update("test q", meta_state.model_dump())
@@ -175,14 +181,16 @@ async def test_aclose_releases_graph_resources():
 
 @pytest.mark.asyncio
 async def test_finalize_invoke_updates_history_and_returns_answer():
-    """Test _finalize_invoke persists truncated history and returns answer."""
+    """Test _finalize_invoke persists truncated history and returns outputs."""
+    from src.meta_agent.output_models import TextOutput
+
     manager = MetaAgentGraphManager()
     graph = MagicMock()
     graph.aupdate_state = AsyncMock()
     manager._graph = graph
 
     runnable_config = {"configurable": {"thread_id": "t-1"}}
-    result = {"answer": "final answer", "history": [{"role": "supervisor", "content": "work"}]}
+    result = {"outputs": [TextOutput(text="final answer")], "history": [{"role": "supervisor", "content": "work"}]}
     with patch(
         "src.meta_agent.graph.build_persisted_history",
         new=AsyncMock(
@@ -192,9 +200,10 @@ async def test_finalize_invoke_updates_history_and_returns_answer():
             ]
         ),
     ):
-        answer = await manager._finalize_invoke(runnable_config, result)
+        outputs = await manager._finalize_invoke(runnable_config, result)
 
-    assert answer == "final answer"
+    assert len(outputs) == 1
+    assert outputs[0].text == "final answer"
     graph.aupdate_state.assert_awaited_once()
     args, _ = graph.aupdate_state.await_args
     assert args[0] == runnable_config

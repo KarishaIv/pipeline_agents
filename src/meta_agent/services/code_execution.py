@@ -105,6 +105,45 @@ except json.JSONDecodeError:
     dto = {}
 """
 
+        # Prepare save_chart function (always available, with fallback to temp dir if needed)
+        save_chart_func = f"""
+import os as _os
+from pathlib import Path as _Path
+from uuid import uuid4 as _uuid4
+from datetime import datetime as _datetime
+import tempfile as _tempfile
+
+# Use provided charts_dir or fallback to temp directory
+_charts_dir = _Path(r'{str(self.config.charts_dir)}') if {self.config.charts_dir is not None} else _Path(_tempfile.gettempdir()) / 'agent_charts'
+_charts_dir.mkdir(parents=True, exist_ok=True)
+
+def save_chart(filename=None):
+    \"\"\"Save current matplotlib figure to disk in the charts directory.
+
+    Args:
+        filename: Optional filename. If None, auto-generates timestamp-based name.
+
+    Returns:
+        Path to the saved chart file.
+    \"\"\"
+    if filename is None:
+        filename = f"chart_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.png"
+
+    # Sanitize filename to prevent path traversal
+    import re as _re
+    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
+    safe_name = _re.sub(r'_+', '_', safe_name)
+    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
+        safe_name = f"chart_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.png"
+    if not safe_name.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
+        safe_name += '.png'
+
+    target_path = _charts_dir / safe_name
+    plt.savefig(str(target_path), bbox_inches='tight', dpi=150)
+    plt.close()
+    return str(target_path)
+"""
+
         sandbox_script = f"""
 import sys
 import io
@@ -123,8 +162,23 @@ import pandas as pd
 # Capture stdout
 _stdout_buf = io.StringIO()
 
+# Restricted import hook to prevent access to dangerous modules
+_SAFE_MODULES = {{'matplotlib', 'numpy', 'pandas', 'json', 'math', 'statistics', 're'}}
+_builtin_import = __import__
+
+def _restricted_import(name, *args, **kwargs):
+    # Allow standard library modules that are already imported at the top level
+    # and explicitly whitelisted safe modules
+    if name not in _SAFE_MODULES and not name.startswith(('src.', '__')):
+        # Check if it's a submodule of a safe module
+        base_module = name.split('.')[0]
+        if base_module not in _SAFE_MODULES:
+            raise ImportError(f"Import of {{name}} is not allowed in this sandbox")
+    return _builtin_import(name, *args, **kwargs)
+
 # Safe builtins (minimal set for performance)
 _safe_builtins = {{
+    '__import__': _restricted_import,
     'print': lambda *a, **kw: print(*a, file=_stdout_buf, **kw),
     'range': range,
     'len': len,
@@ -176,6 +230,9 @@ try:
 except Exception:
     df = pd.DataFrame()
 
+# Setup save_chart function if charts directory is available
+{save_chart_func}
+
 # Sandbox namespace
 _namespace = {{
     '__builtins__': _safe_builtins,
@@ -186,6 +243,9 @@ _namespace = {{
     'json': json,
     'stats': stats,
 }}
+
+if 'save_chart' in locals():
+    _namespace['save_chart'] = save_chart
 
 if 'dto' in locals():
     _namespace['dto'] = dto
@@ -308,4 +368,3 @@ except Exception:
                 Path(script_path).unlink()
             except OSError:
                 pass
-
