@@ -23,6 +23,7 @@ from src.meta_agent.prompts.code_writer import (
     _CODE_WRITER_DTO_ENV_VAR,
 )
 from src.meta_agent.prompts.history import HISTORY_SUMMARIZER_SYSTEM
+from src.meta_agent.prompts.ood import OOD_CHECKER_SYSTEM
 
 __all__ = [
     "SUPERVISOR_SYSTEM",
@@ -30,6 +31,7 @@ __all__ = [
     "ANALYZER_SYSTEM",
     "CODE_WRITER_SYSTEM",
     "HISTORY_SUMMARIZER_SYSTEM",
+    "OOD_CHECKER_SYSTEM",
     # Private constants (for tests and configuration)
     "_EXTRACTOR_TOOLS",
     "_EXTRACTOR_TOOLS_BLOCK",

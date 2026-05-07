@@ -407,8 +407,13 @@ def get_income_range(income: float, bins, labels) -> str:
 
 def _fetch_embedding(text: str, model_suffix: str) -> List[float]:
     """Call Yandex Embeddings REST API directly."""
-    api_key = os.getenv("YANDEX_API_KEY", "")
-    folder_id = os.getenv("YANDEX_FOLDER_ID", "")
+    api_key = (os.getenv("YANDEX_API_KEY") or "").strip()
+    folder_id = (os.getenv("YANDEX_FOLDER_ID") or "").strip()
+    if not api_key or not folder_id:
+        raise ValueError(
+            "YANDEX_API_KEY and YANDEX_FOLDER_ID must be set for embeddings "
+            "(env vars or create_persons --api_key / --folder_id)."
+        )
     model_uri = f"emb://{folder_id}/{model_suffix}/latest"
     response = httpx.post(
         YANDEX_EMBED_URL,
@@ -419,7 +424,22 @@ def _fetch_embedding(text: str, model_suffix: str) -> List[float]:
         json={"modelUri": model_uri, "text": text},
         timeout=30.0,
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        body = (e.response.text or "")[:2000]
+        logger.error(
+            "Yandex textEmbedding HTTP %s: %s",
+            e.response.status_code,
+            body,
+        )
+        raise httpx.HTTPStatusError(
+            f"Yandex textEmbedding HTTP {e.response.status_code}: "
+            f"check Api-Key IAM (e.g. ai.languageModels.user for this folder), "
+            f"YANDEX_FOLDER_ID match, embeddings access. Body: {body}",
+            request=e.request,
+            response=e.response,
+        ) from None
     return response.json()["embedding"]
 
 

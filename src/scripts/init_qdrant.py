@@ -42,6 +42,13 @@ COLLECTIONS = [
         "vector_keys": ["emotional_vector", "rational_vector", "social_vector", "ideological_vector", "decision_vector", "general_vector"],
         "payload_keys": None,
     },
+    {
+        "name": "world_contexts",
+        "parquet": "world_contexts.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["embedding"],
+        "payload_keys": None,
+    },
 ]
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import List, Literal, TYPE_CHECKING
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from sgr_agent_core.base_tool import SystemBaseTool
 from sgr_agent_core.models import AgentStatesEnum
@@ -194,3 +194,26 @@ class AnalyzerDecisionTool(SystemBaseTool):
         payload = self.model_dump_json()
         context.execution_result = payload
         return payload
+
+
+class OODCheckResult(BaseModel):
+    """Lightweight Pydantic model for structured output from the OOD checker LLM call.
+
+    Used by ood_checker_node via robust_llm_call; not a SystemBaseTool.
+    """
+
+    is_relevant: bool = Field(
+        ...,
+        description=(
+            "True if the user's question refers to the simulation pipeline, "
+            "its results, data, agents, personas, outputs, or related artifacts. "
+            "False for completely unrelated topics (weather, general knowledge, etc.)."
+        ),
+    )
+    redirect_message: str | None = Field(
+        default=None,
+        description=(
+            "If is_relevant=False, a short polite Russian message telling the user "
+            "to ask about simulations or prefix with /force to bypass."
+        ),
+    )

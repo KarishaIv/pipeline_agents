@@ -22,6 +22,12 @@ class AnalyzerRoute(str, Enum):
     SUPERVISOR = "supervisor"
 
 
+class OODRoute(str, Enum):
+    """Valid routes from ood_checker node."""
+    SUPERVISOR = "supervisor"
+    END = "end"
+
+
 def route_supervisor(state: dict | Any) -> str:
     """Определяет следующий узел по решению супервайзера (next_worker из состояния).
 
@@ -53,3 +59,16 @@ def route_analyzer(state: dict | Any) -> str:
     except ValueError:
         logger.error("Invalid analyzer route '%s', defaulting to 'supervisor'", next_worker)
         return AnalyzerRoute.SUPERVISOR.value
+
+
+def route_ood_checker(state: dict | Any) -> str:
+    """Определяет следующий узел после ood_checker: supervisor или end."""
+    state = state_to_dict(state)
+    next_worker = state.get("next_worker", "end")
+
+    try:
+        validated = OODRoute(next_worker)
+        return validated.value
+    except ValueError:
+        logger.error("Invalid ood_checker route '%s', defaulting to 'end'", next_worker)
+        return OODRoute.END.value

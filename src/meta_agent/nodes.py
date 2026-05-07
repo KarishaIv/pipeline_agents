@@ -7,10 +7,12 @@ from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 
 from src.meta_agent.configs import MAX_DELEGATED_ATTEMPTS, MAX_HISTORY_CHARS, MAX_SUPERVISOR_ITERATIONS
+from src.meta_agent.prompts import OOD_CHECKER_SYSTEM
 from src.meta_agent.dto import DtoPayload
-from src.meta_agent.tools.output_tools import AnalyzerDecisionTool
+from src.meta_agent.tools.output_tools import AnalyzerDecisionTool, OODCheckResult
 from src.meta_agent.utils.history import build_role_history_text_async, summarize_history_text
 from src.meta_agent.utils.state import state_to_dict
+from src.utils import robust_llm_call
 from src.meta_agent.workers import _get_worker_definition, run_structured_worker
 
 logger = logging.getLogger("meta_agent")
@@ -246,4 +248,49 @@ async def code_writer_node(state: dict | Any, config: RunnableConfig | None = No
         "artifacts": result.get("artifacts", []),
         "current_task": code_task,
         "delegated_attempts": int(state.get("delegated_attempts", 0)),
+    }
+
+
+FORCE_GUIDANCE = (
+    "\n\nВы можете добавить префикс /force к вашему вопросу, "
+    "чтобы пропустить эту проверку и продолжить работу с мета-агентом."
+)
+
+
+@traceable(name="node.ood_checker", run_type="chain")
+async def ood_checker_node(state: dict | Any, config: RunnableConfig | None = None) -> dict:
+    """Первый узел графа: проверяет релевантность вопроса к симуляционному пайплайну.
+
+    Делает один structured LLM вызов через robust_llm_call.
+    Если релевантно — передаёт супервайзеру.
+    Если нет — завершает с redirect-сообщением (к которому дописывается guidance про /force).
+    """
+    state = state_to_dict(state)
+    question = state.get("question", "").strip()
+    if not question:
+        return {"next_worker": "end", "outputs": [{"type": "text", "text": "Пожалуйста, задайте вопрос."}]}
+
+    prompt = OOD_CHECKER_SYSTEM.format(question=question)
+    result = await robust_llm_call(prompt, structured_output=OODCheckResult)
+
+    if isinstance(result, dict):
+        # fallback if not validated
+        is_relevant = result.get("is_relevant", False)
+        msg = result.get("redirect_message")
+    else:
+        is_relevant = getattr(result, "is_relevant", False)
+        msg = getattr(result, "redirect_message", None)
+
+    if is_relevant:
+        return {
+            "next_worker": "supervisor",
+            "history": [{"role": "ood_checker", "content": "Вопрос релевантен симуляциям. Продолжаю."}],
+        }
+
+    # not relevant: append fixed /force guidance (post-LLM, never in prompt)
+    final_msg = (msg or "Ваш вопрос не относится к симуляционному пайплайну.") + FORCE_GUIDANCE
+    return {
+        "next_worker": "end",
+        "outputs": [{"type": "text", "text": final_msg}],
+        "history": [{"role": "ood_checker", "content": final_msg}],
     }

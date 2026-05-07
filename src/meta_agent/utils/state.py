@@ -97,6 +97,7 @@ class MetaAgentState(BaseModel):
     current_task: str = Field(default="")
     delegated_attempts: int = Field(default=0)
     iterations: int = Field(default=0)
+    force_bypass_ood: bool = Field(default=False)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -116,20 +117,30 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
 
     Сбрасывает управляющие поля, сохраняет dto_store, outputs и artifacts,
     и добавляет вопрос в историю.
+    Поддерживает префикс /force для обхода OOD-проверки.
     """
     dto_store = snapshot_values.get("dto_store", {})
     outputs = snapshot_values.get("outputs", [])
     artifacts = snapshot_values.get("artifacts", [])
 
+    force_bypass = False
+    q = question.strip()
+    lower_q = q.lower()
+    if "/force" in lower_q:
+        force_bypass = True
+        # delete /force and optional following whitespace
+        q = q.replace("/force", "").lstrip()
+
     state_update = {
-        "question": question,
+        "question": q,
         "iterations": 0,
         "delegated_attempts": 0,
         "next_worker": "",
         "current_task": "",
         "dto_store": dict(dto_store),
-        "outputs": list(outputs),  # Preserve existing outputs from prior turns
-        "artifacts": list(artifacts),  # Preserve existing artifacts from prior turns
+        "outputs": list(outputs),
+        "artifacts": list(artifacts),
+        "force_bypass_ood": force_bypass,
         # history использует append reducer: в update передаём только дельту текущего хода
         "history": [{"role": "user", "content": question}],
     }

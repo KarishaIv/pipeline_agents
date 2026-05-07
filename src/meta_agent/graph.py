@@ -18,12 +18,18 @@ from langgraph.graph import END, START, StateGraph
 from langchain_core.runnables import RunnableConfig
 from langsmith import traceable
 from src.meta_agent.configs import CHECKPOINT_DB_PATH
-from src.meta_agent.nodes import analyzer_node, code_writer_node, data_extractor_node, supervisor_node
-from src.meta_agent.utils.state import MetaAgentState, build_turn_state_update
+from src.meta_agent.nodes import (
+    analyzer_node,
+    code_writer_node,
+    data_extractor_node,
+    ood_checker_node,
+    supervisor_node,
+)
+from src.meta_agent.utils.state import MetaAgentState, build_turn_state_update, state_to_dict
 from src.meta_agent.utils.history import (
     build_persisted_history,
 )
-from src.meta_agent.utils.routing import route_analyzer, route_supervisor
+from src.meta_agent.utils.routing import route_analyzer, route_ood_checker, route_supervisor
 from src.meta_agent.utils.thread_ids import generate_thread_id
 
 logger = logging.getLogger("meta_agent")
@@ -73,8 +79,22 @@ class MetaAgentGraphManager:
         graph.add_node("data_extractor", data_extractor_node)
         graph.add_node("analyzer", analyzer_node)
         graph.add_node("code_writer", code_writer_node)
+        graph.add_node("ood_checker", ood_checker_node)
 
-        graph.add_edge(START, "supervisor")
+        def _route_from_start(s: dict | Any) -> str:
+            s = state_to_dict(s)
+            return "supervisor" if s.get("force_bypass_ood") else "ood_checker"
+
+        graph.add_conditional_edges(
+            START,
+            _route_from_start,
+            {"ood_checker": "ood_checker", "supervisor": "supervisor"},
+        )
+        graph.add_conditional_edges(
+            "ood_checker",
+            route_ood_checker,
+            {"supervisor": "supervisor", "end": END},
+        )
         graph.add_conditional_edges(
             "supervisor",
             route_supervisor,

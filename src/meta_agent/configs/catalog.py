@@ -7,8 +7,8 @@ Used in prompts and tools.
 from typing import Literal
 
 # List of available Qdrant collections (must match real collections in the database)
-AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations"]
-CollectionName = Literal["questions", "personas", "target_audiences", "simulations"]
+AVAILABLE_COLLECTIONS = ["questions", "personas", "target_audiences", "simulations", "world_contexts"]
+CollectionName = Literal["questions", "personas", "target_audiences", "simulations", "world_contexts"]
 
 COLLECTION_ENUM_DESC = "Имя коллекции Qdrant (как в базе): " + ", ".join(AVAILABLE_COLLECTIONS)
 
@@ -18,6 +18,7 @@ COLLECTION_DESCRIPTIONS: dict[str, str] = {
     "personas": "Синтетические персоны с социо-демографическими и психологическими характеристиками",
     "target_audiences": "Сегменты целевой аудитории с описанием и агрегированными характеристиками",
     "simulations": "Результаты симуляции ответов персон на вопросы с рассуждениями и решением",
+    "world_contexts": "Новостной/мировой контекст мира для целевых аудиторий",
 }
 
 

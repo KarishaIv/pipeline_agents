@@ -41,18 +41,21 @@ from src.meta_agent.prompts import (
 
 def test_catalog_constants_and_function():
     """Test catalog definitions and get_collection_catalog output."""
-    assert len(AVAILABLE_COLLECTIONS) == 4
-    assert all(c in ["questions", "personas", "target_audiences", "simulations"] for c in AVAILABLE_COLLECTIONS)
+    assert len(AVAILABLE_COLLECTIONS) == 5
+    assert all(c in ["questions", "personas", "target_audiences", "simulations", "world_contexts"] for c in AVAILABLE_COLLECTIONS)
     assert set(get_args(CollectionName)) == set(AVAILABLE_COLLECTIONS)
 
     assert "questions" in COLLECTION_DESCRIPTIONS
     assert "персоны" in COLLECTION_DESCRIPTIONS["personas"].lower()
+    assert "world_contexts" in COLLECTION_DESCRIPTIONS
+    assert "новостной" in COLLECTION_DESCRIPTIONS["world_contexts"].lower() or "контекст" in COLLECTION_DESCRIPTIONS["world_contexts"].lower()
 
     catalog = get_collection_catalog()
     assert isinstance(catalog, str)
     assert "• questions —" in catalog
     assert "• personas —" in catalog
-    assert len(catalog.split("\n")) == 4
+    assert "• world_contexts —" in catalog
+    assert len(catalog.split("\n")) == 5
 
 
 def test_prompts_contain_key_elements():

@@ -54,7 +54,7 @@ class PipelineRunner:
         results = await self._run_simulations(all_personas, datasets, world_contexts)
         
         # 5. Сохранение результатов
-        await self._save_results(all_personas, results, datasets)
+        await self._save_results(all_personas, results, datasets, world_contexts)
         
         logger.info("✅ Pipeline completed successfully")
         return results
@@ -209,7 +209,7 @@ class PipelineRunner:
         logger.info(f"  ✓ Completed {len(results)} simulations")
         return results
     
-    async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict):
+    async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict, world_contexts: Optional[Dict[str, dict]] = None):
         """Сохранение всех результатов пайплайна"""
         logger.info("💾 Saving pipeline results...")
 
@@ -219,87 +219,45 @@ class PipelineRunner:
         personas_path = self.output_dir.parent / "data_4_qdrant/personas.parquet"
         target_audiences_path = self.output_dir.parent / "data_4_qdrant/target_audiences.parquet"
         simulations_path = self.output_dir.parent / "data_4_qdrant/simulations.parquet"
+        world_contexts_path = self.output_dir.parent / "data_4_qdrant/world_contexts.parquet"
 
         # Сохранение вопросов опроса
         logger.info(f" Сохранение вопросов опроса")
         questions_uuids = {
-            question : get_uuid("questions", question)
-            for question in datasets['survey_questions']
+            question: get_uuid("questions", question)
+            for question in datasets["survey_questions"]
         }
-        await StorageManager.append_parquet_async(
-            [
-                {
-                    "UUID": questions_uuids[question],
-                    "embedding": get_embedding(question, query=False),
-                    "question": question,
-                }
-                for question in datasets['survey_questions']
-            ], 
-            questions_path,
-        )
-        
+        question_rows = _build_question_rows(datasets["survey_questions"])
+        await StorageManager.append_parquet_async(question_rows, questions_path)
+
         # Сохранение персон
         logger.info(f" Сохранение персон")
-        await StorageManager.append_parquet_async(
-            [
-                {
-                    "UUID": persona['UUID'],
-                    "embedding": get_embedding(get_clear_personas(persona).to_string(), query=False),
-                    **persona.to_dict(),
-                }
-                for _, persona in all_personas.iterrows()
-            ], 
-            personas_path,
-        )
+        persona_rows = _build_persona_rows(all_personas)
+        await StorageManager.append_parquet_async(persona_rows, personas_path)
 
         # Сохранение целевых аудиторий
         logger.info(f" Сохранение целевых аудиторий")
-        await StorageManager.append_parquet_async(
-            [
-                {
-                    "UUID": get_uuid("target_audiences", str(group)),
-                    "embedding": get_embedding(str(group), query=False),
-                    **group,
-                    "personas_uuids": [
-                        persona['UUID']
-                        for _, persona in all_personas[
-                            all_personas['target_audience_name'] == group['target_audience_name']
-                        ].iterrows()
-                    ],
+        ta_rows = _build_target_audience_rows(datasets["evidence"], all_personas)
+        await StorageManager.append_parquet_async(ta_rows, target_audiences_path, check_columns=False)
 
-                }
-                for group in datasets['evidence']
-            ], 
-            target_audiences_path,
-            check_columns=False
-        )
+        # Сохранение мировых/новостных контекстов (отдельный файл для переиспользования)
+        wc_rows: List[Dict] = []
+        if world_contexts:
+            logger.info(" Сохранение мировых контекстов")
+            wc_rows = _build_world_context_rows(world_contexts)
+            await StorageManager.append_parquet_async(wc_rows, world_contexts_path, check_columns=False)
 
-        # Сохранение результатов симуляций
+        # Сохранение результатов симуляций (с nullable полями для world_context)
         logger.info(f" Сохранение результатов симуляций")
-        await StorageManager.append_parquet_async(
-            [
-                {
-                    "UUID": get_uuid("simulations"),
-                    **get_sim_embeddings(state),
-                    **get_sim_reasonings(state),
-                    **get_sim_last_reactions(state),
-                    "persona_UUID": result['profile']['UUID'],
-                    "question_UUID": questions_uuids[state['scenario']],
-                    "decision_reasoning": get_decision(state['final_decision'])['reasoning'],
-                    "decision": get_decision(state['final_decision'])['decision'],
-                    "decision_confidence": get_decision(state['final_decision'])['confidence'],
-                    "generation_count": state['generation_count'],
-                    "max_generations": state['max_generations'],
-                    "timestamp": state['timestamp'],
-                    # TODO: добавить контекст агентов
-                } 
-                for result in results if 'survey_responses' in result
-                for response in result['survey_responses']
-                for state in [response['full_state']]   # чтобы не писать на каждой строке ['full_state']
-            ],
-            simulations_path,
-            check_columns=False
-        )
+        wc_uuid_map: Dict[str, str] = {r["ta_name"]: r["UUID"] for r in wc_rows}
+        sim_rows = []
+        for result in results:
+            if "survey_responses" not in result:
+                continue
+            for response in result["survey_responses"]:
+                state = response["full_state"]
+                sim_rows.append(_build_simulation_row(result, response, state, questions_uuids, wc_uuid_map))
+        await StorageManager.append_parquet_async(sim_rows, simulations_path, check_columns=False)
         
 async def generate_personas_via_pgm(
     evidence_list: List[Dict],
@@ -577,3 +535,114 @@ def get_decision(decision: Dict | str | None) -> Dict:
             "decision": None,
             "confidence": 0,
         }
+
+
+def _build_world_context_rows(world_contexts: Optional[Dict[str, dict]]) -> List[Dict]:
+    """Build rows for world_contexts.parquet using FULL serialized context for UUID and embedding"""
+    rows: List[Dict] = []
+    for ta_name, ctx in (world_contexts or {}).items():
+        if not ctx:
+            continue
+
+        # Full text for deterministic UUID + embedding (enables dedup and semantic search on whole context)
+        full_text = json.dumps(ctx, ensure_ascii=False, sort_keys=True)
+        wc_uuid = get_uuid("world_contexts", full_text)
+        emb = get_embedding(full_text, query=False)
+
+        rows.append({
+            "UUID": wc_uuid,
+            "embedding": emb,
+            "ta_name": ta_name,
+            "snapshot_id": ctx.get("snapshot_id"),
+            "audience": ctx.get("audience"),
+            "question": ctx.get("question"),
+            "summary_text": ctx.get("summary_text"),
+            "factors": ctx.get("factors", []),
+            "risks": ctx.get("risks", []),
+            "opportunities": ctx.get("opportunities", []),
+            "audience_effects": ctx.get("audience_effects", []),
+            "evidence": ctx.get("evidence", []),
+            "generated_at": ctx.get("generated_at"),
+            "fictional_warning": ctx.get("fictional_warning"),
+            "overall_reaction": ctx.get("overall_reaction"),
+            "impact_horizon": ctx.get("impact_horizon"),
+            "confidence": ctx.get("confidence"),
+        })
+    return rows
+
+
+def _build_simulation_row(
+    result: Dict,
+    response: Dict,
+    state: Dict,
+    questions_uuids: Dict[str, str],
+    wc_uuid_map: Dict[str, str],
+) -> Dict:
+    """Readable builder for a simulation row; handles optional world_context (nullable fields)."""
+    wc = state.get("world_context") or {}
+    wc_used = bool(wc) or state.get("trace", {}).get("world_context_used", False)
+    ta_name = result.get("profile", {}).get("target_audience_name", "") or wc.get("audience", "")
+    wc_uuid = wc_uuid_map.get(ta_name) if wc_used else None
+
+    row = {
+        "UUID": get_uuid("simulations"),
+        **get_sim_embeddings(state),
+        **get_sim_reasonings(state),
+        **get_sim_last_reactions(state),
+        "persona_UUID": result["profile"]["UUID"],
+        "question_UUID": questions_uuids[state["scenario"]],
+        "decision_reasoning": get_decision(state["final_decision"])["reasoning"],
+        "decision": get_decision(state["final_decision"])["decision"],
+        "decision_confidence": get_decision(state["final_decision"])["confidence"],
+        "generation_count": state["generation_count"],
+        "max_generations": state["max_generations"],
+        "timestamp": state["timestamp"],
+        # world_context support (nullable when not used for this simulation)
+        "world_context_used": wc_used,
+        "world_context_UUID": wc_uuid,
+        "world_context_snapshot_id": wc.get("snapshot_id") if wc_used else None,
+    }
+    return row
+
+
+def _build_question_rows(questions: List[str]) -> List[Dict]:
+    """Build question rows using question text for both UUID and embedding."""
+    return [
+        {
+            "UUID": get_uuid("questions", q),
+            "embedding": get_embedding(q, query=False),
+            "question": q,
+        }
+        for q in questions
+    ]
+
+
+def _build_persona_rows(all_personas: pd.DataFrame) -> List[Dict]:
+    """Build persona rows: reuse existing UUID, compute embedding from clear persona string."""
+    return [
+        {
+            "UUID": persona["UUID"],
+            "embedding": get_embedding(get_clear_personas(persona).to_string(), query=False),
+            **persona.to_dict(),
+        }
+        for _, persona in all_personas.iterrows()
+    ]
+
+
+def _build_target_audience_rows(evidence_list: List[Dict], all_personas: pd.DataFrame) -> List[Dict]:
+    """Build TA rows with personas_uuids list; UUID/embedding from stringified group."""
+    rows: List[Dict] = []
+    for group in evidence_list:
+        ta_name = group.get("target_audience_name", "")
+        personas_uuids = [
+            p["UUID"]
+            for _, p in all_personas[all_personas["target_audience_name"] == ta_name].iterrows()
+        ]
+        
+        rows.append({
+            "UUID": get_uuid("target_audiences", str(group)),
+            "embedding": get_embedding(str(group), query=False),
+            **group,
+            "personas_uuids": personas_uuids,
+        })
+    return rows
