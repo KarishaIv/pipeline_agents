@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from meta_agent import MetaAgentApiResponse, TextOutput
+from src.meta_agent import MetaAgentApiResponse, TextOutput
 from src.meta_agent.telegram.message_handler import MessageHandler
 from src.meta_agent.telegram.update_parser import TelegramMessage
 

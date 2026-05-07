@@ -26,6 +26,6 @@ CHECKPOINT_DB_PATH: Path = PROJECT_ROOT / "data" / "meta_agent_checkpoints.sqlit
 CODE_TIMEOUT = 30
 
 # LLM models (BIG_MODEL is used for code_writer)
-LLM_MODEL = "aliceai-llm"
-BIG_MODEL = "aliceai-llm"
-HISTORY_SUMMARY_MODEL = "aliceai-llm"
+LLM_MODEL = "yandexgpt-5.1"
+BIG_MODEL = "yandexgpt-5.1"
+HISTORY_SUMMARY_MODEL = "yandexgpt-5.1"

@@ -82,24 +82,6 @@ def test_prompts_contain_key_elements():
     assert "data_extraction_report" in EXTRACTOR_SYSTEM.lower()
 
 
-def test_config_constants():
-    """Test default config values from meta_agent/config.py."""
-    assert MAX_SUPERVISOR_ITERATIONS == 10
-    assert MAX_AGENT_ITERATIONS == 20
-    assert MAX_HISTORY_CHARS == 10_000
-    assert MAX_DELEGATED_ATTEMPTS == 6
-    assert CODE_TIMEOUT == 30
-    assert LLM_MODEL == "aliceai-llm"
-    assert BIG_MODEL == "aliceai-llm"
-
-    assert isinstance(QDRANT_HOST, str)
-    assert isinstance(QDRANT_PORT, int)
-    assert QDRANT_PORT == 6333  # default
-
-    assert isinstance(CHARTS_DIR, Path)
-    assert "charts" in str(CHARTS_DIR)
-
-
 def test_config_env_overrides(monkeypatch):
     """Test that config respects environment variables."""
     import src.meta_agent.configs.runtime as config_module

@@ -221,7 +221,7 @@ async def test_code_writer_node(mock_run_agent, meta_state, mocker):
 
 def test_nodes_import_and_structure():
     """Verify all nodes and helpers are importable and have expected signatures."""
-    import meta_agent.nodes as nodes_mod
+    import src.meta_agent.nodes as nodes_mod
 
     assert hasattr(nodes_mod, "supervisor_node")
     assert hasattr(nodes_mod, "data_extractor_node")

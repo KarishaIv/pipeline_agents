@@ -20,11 +20,11 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.meta_agent.configs import TelegramBotConfig  # noqa: E402
-from meta_agent.telegram.bot_client import TelegramBotClient  # noqa: E402
-from meta_agent.telegram.meta_agent_client import MetaAgentClient  # noqa: E402
-from meta_agent.telegram.session_store import TelegramSessionStore  # noqa: E402
-from meta_agent.telegram.message_handler import MessageHandler  # noqa: E402
-from meta_agent.telegram.update_parser import parse_update, parse_callback_query  # noqa: E402
+from src.meta_agent.telegram.bot_client import TelegramBotClient  # noqa: E402
+from src.meta_agent.telegram.meta_agent_client import MetaAgentClient  # noqa: E402
+from src.meta_agent.telegram.session_store import TelegramSessionStore  # noqa: E402
+from src.meta_agent.telegram.message_handler import MessageHandler  # noqa: E402
+from src.meta_agent.telegram.update_parser import parse_update, parse_callback_query  # noqa: E402
 
 load_dotenv(override=True)
 

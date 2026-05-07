@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from meta_agent import (
+from src.meta_agent import (
     AskRequest,
     MetaAgentApiResponse,
     MetaAgentResult,

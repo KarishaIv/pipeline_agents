@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 import logging
 
-from meta_agent import AskRequest, MetaAgentApiResponse
+from src.meta_agent import AskRequest, MetaAgentApiResponse
 
 logger = logging.getLogger(__name__)
 

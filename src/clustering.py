@@ -7,10 +7,10 @@ from tqdm import tqdm
 from config import *
 import warnings
 import logging
-from data_loading import load_american_data
+from src.data_loading import load_american_data
 
 warnings.filterwarnings('ignore')
-from agents.ocean_agent import calculate_ocean_profiles
+from src.agents.ocean_agent import calculate_ocean_profiles
 
 # import gower
 GOWER_AVAILABLE = False
