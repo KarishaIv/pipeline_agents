@@ -12,12 +12,16 @@ Human (or future LLM) assigns 0.0–1.0 scores after execution. Runner captures 
 - session_context_behavior (multi-turn, follow-up)
 
 ## Quick Start (CLI)
+
 ```bash
 # Run all suites and score interactively
 python -m src.meta_agent.benchmark.main run --suite all --review interactive --output benchmark_reports/run1
 
-# Run specific section (unscored results only)
+# Run a single thematic section (results only, no scoring)
 python -m src.meta_agent.benchmark.main run --suite analysis_correctness --output benchmark_reports/analysis
+
+# Score previously saved results (interactive)
+python -m src.meta_agent.benchmark.main score --input benchmark_reports/run1 --suite all
 ```
 
 ## Python API
@@ -39,4 +43,4 @@ report = generate_report(results, scores=..., output_dir="benchmark_reports")
 - `scores.json` — per-case 0-1 scores + comments
 - `benchmark_report.json` + `.md` — summary with section averages, overall score, failures
 
-See `suites.py`, `cases.py`, `__main__.py` for details.
+See `suites.py`, `cases.py`, `main.py`, `runner.py` and `report.py` for implementation details.

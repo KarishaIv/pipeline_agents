@@ -264,13 +264,18 @@ python3 -m src.scripts.serve_telegram_bot
 
 ## Что находится внутри `meta_agent`
 
-- `graph.py` - сборка и запуск LangGraph-графа;
-- `nodes.py` - узлы `supervisor`, `data_extractor`, `analyzer`, `code_writer`;
-- `agent_factory.py` - создание LLM-агентов поверх Yandex API;
-- `tools/qdrant_tools.py` - поиск, фильтрация, скролл и retrieve по Qdrant;
-- `tools/analyzer_tools.py` - статистики, суммаризация и построение графиков;
-- `services/qdrant.py` - singleton-клиент к Qdrant;
-- `catalog.py` - список доступных коллекций и их описания.
+- `graph.py` — сборка и запуск LangGraph-графа (`MetaAgentGraphManager`);
+- `nodes.py` — узлы графа: `supervisor`, `data_extractor`, `analyzer`, `code_writer`;
+- `agent_factory.py` — фабрика LLM-агентов (Yandex GPT + structured outputs);
+- `configs/` — runtime, catalog (коллекции Qdrant), workers, telegram;
+- `prompts/` — системные промпты (supervisor, extractor, analyzer, code_writer, history, ood);
+- `tools/` — Qdrant, DTO, analyzer, budget, output, code-writer инструменты;
+- `services/` — Qdrant singleton, code execution sandbox, chart generation;
+- `utils/` — history compression, state reducers, routing, JSON helpers;
+- `dto.py`, `output_models.py`, `api_models.py` — Pydantic модели запросов/ответов;
+- `workers.py` — воркеры для параллельных задач;
+- `telegram/` — бот (long polling, multi-session, message handler);
+- `benchmark/` — качественный бенчмарк (suites, cases, runner, report).
 
 ## Типовой порядок запуска с нуля
 

@@ -24,7 +24,13 @@
   - `YANDEX_API_KEY`
   - `YANDEX_FOLDER_ID`
 
-Установка:
+Установка (рекомендуется uv для pyproject.toml):
+
+```bash
+uv sync
+```
+
+Или классический venv:
 
 ```bash
 python3.12 -m venv .venv312
@@ -168,8 +174,6 @@ python main.py \
 ```
 
 При необходимости туда тоже можно передать `--news-context-path`, но основной финальный результат в репозитории сейчас связан именно с `structured survey mode (структурированным survey-режимом)`.
-
-## Что не входит в основной merge
 
 ## 📚 Ключевые компоненты
 
