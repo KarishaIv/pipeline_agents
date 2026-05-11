@@ -1,7 +1,7 @@
 # Meta-Agent Qualitative Benchmark
 
-Redesigned benchmark: no gold oracles or deterministic scorers.  
-Cases include Russian prompts + qualitative expectations (description, expected_answer, success_criteria, rubric).  
+Redesigned benchmark: no gold oracles or deterministic scorers.
+Cases include Russian prompts + qualitative expectations (description, expected_answer, success_criteria, rubric).
 Human (or future LLM) assigns 0.0–1.0 scores after execution. Runner captures performance (latency, iterations, artifact counts).
 
 ## Thematic Sections

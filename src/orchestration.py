@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class PipelineRunner:
     """Основной класс для запуска пайплайна генерации и симуляции персон"""
-    
+
     def __init__(self, config: dict, news_enricher: Optional[NewsContextEnricher] = None):
         self.config = config
         self.output_dir = Path(config['output'])
@@ -31,18 +31,18 @@ class PipelineRunner:
         self.use_pgm = config.get('use_pgm', True)
         self.news_enricher = news_enricher
         self.pre_world_contexts = config.get('world_contexts') or {}
-        
+
     async def run(self):
         """Запуск полного пайплайна"""
         logger.info("🚀 Starting pipeline execution")
         logger.info(f"Mode: {'PGM (synthetic)' if self.use_pgm else 'Real data (filtered)'}")
-        
+
         # 1. Загрузка данных
         datasets = await self._load_datasets()
-        
+
         # 2. Обучение PGM модели (только если используем PGM)
         pgm_model = await self._train_pgm_model(datasets['russian']) if self.use_pgm else None
-        
+
         # 3. Генерация/фильтрация персон для всех целевых аудиторий
         all_personas = await self._generate_or_filter_personas(datasets, pgm_model)
 
@@ -53,13 +53,13 @@ class PipelineRunner:
 
         # 4. Запуск симуляций
         results = await self._run_simulations(all_personas, datasets, world_contexts)
-        
+
         # 5. Сохранение результатов
         await self._save_results(all_personas, results, datasets, world_contexts)
-        
+
         logger.info("✅ Pipeline completed successfully")
         return results
-    
+
     async def _load_datasets(self) -> Dict[str, any]:
         """Загрузка всех необходимых datasets"""
         logger.info("Loading datasets...")
@@ -70,17 +70,17 @@ class PipelineRunner:
             evidence_data = load_evidence_from_json(self.config['evidence'])
         nemo_data = load_american_data(self.config['nemo_size'])
         russian_data = load_synthetic_data()
-        
+
         # Предобрабатываем российские данные для единообразия
         russian_data_preprocessed = preprocess_pgm_data(russian_data)
-        
+
         datasets = {
             'evidence': evidence_data,
             'nemo': nemo_data,
             'russian': russian_data,
             'russian_preprocessed': russian_data_preprocessed
         }
-        
+
         # Загрузка вопросов опроса
         if self.config.get('survey_questions'):
             datasets['survey_questions'] = self.config['survey_questions']
@@ -92,29 +92,29 @@ class PipelineRunner:
             except Exception as e:
                 logger.warning(f"Failed to load survey questions: {e}")
                 datasets['survey_questions'] = []
-        
+
         logger.info(f"  ✓ Evidence: {len(evidence_data)} target audiences")
         logger.info(f"  ✓ Russian data: {len(russian_data)} personas")
         logger.info(f"  ✓ American data: {len(nemo_data)} personas")
         logger.info(f"  ✓ Using {'PGM generation' if self.use_pgm else 'real data filtering'}")
-        
+
         return datasets
-    
+
     async def _train_pgm_model(self, russian_data: pd.DataFrame):
         """Обучение PGM модели (только при использовании PGM)"""
         if not self.use_pgm:
             logger.info("⏭️  Skipping PGM training (use_pgm=False)")
             return None
-            
+
         logger.info("🧠 Training PGM model...")
-        
+
         df_prep = preprocess_pgm_data(russian_data)
         model = create_pgm_model()
         trained_model = train_pgm_model(model, df_prep)
-        
+
         logger.info(f"  ✓ Model trained: {len(trained_model.nodes())} nodes, {len(trained_model.edges())} edges")
         return trained_model
-    
+
     async def _enrich_with_news_context(
         self, evidence_list: List[Dict]
     ) -> Dict[str, dict]:
@@ -171,10 +171,10 @@ class PipelineRunner:
             lambda row: get_uuid("personas", get_clear_personas(row).to_string()), axis=1
         )
 
-        
+
         logger.info(f"  ✓ Processed {len(all_personas)} personas across {len(datasets['evidence'])} target audiences")
         return all_personas
-    
+
     async def _run_simulations(self, all_personas: pd.DataFrame, datasets, world_contexts: Dict[str, dict] = None):
         """Запуск мульти-агентных симуляций"""
         logger.info("🤖 Running multi-agent simulations...")
@@ -185,7 +185,7 @@ class PipelineRunner:
         if news_context_path:
             with open(news_context_path, 'r', encoding='utf-8') as f:
                 news_context = json.load(f)
-        
+
         manager = SimulationManager(
             out_dir=self.output_dir,
             concurrency=self.config['concurrency'],
@@ -199,17 +199,17 @@ class PipelineRunner:
             visualize_sample=self.config.get('visualize_sample', 0),
             summary_visualize=self.config.get('summary_visualize', True)
         )
-        
+
         timestamp = datetime.now().strftime("%m%d_%H%M%S")
         results = await manager.run_many(
-            personas, 
-            steps=self.config['simulation_steps'], 
+            personas,
+            steps=self.config['simulation_steps'],
             out_subdir=f"sim_{timestamp}"
         )
-        
+
         logger.info(f"  ✓ Completed {len(results)} simulations")
         return results
-    
+
     async def _save_results(self, all_personas: pd.DataFrame, results: List, datasets: Dict, world_contexts: Optional[Dict[str, dict]] = None):
         """Сохранение всех результатов пайплайна"""
         logger.info("💾 Saving pipeline results...")
@@ -259,7 +259,7 @@ class PipelineRunner:
                 state = response["full_state"]
                 sim_rows.append(_build_simulation_row(result, response, state, questions_uuids, wc_uuid_map))
         await StorageManager.append_parquet_async(sim_rows, simulations_path, check_columns=False)
-        
+
 async def generate_personas_via_pgm(
     evidence_list: List[Dict],
     model,
@@ -270,20 +270,20 @@ async def generate_personas_via_pgm(
     ocean_flag: bool = True
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Генерация персон через PGM модель"""
-    
+
     async def data_fetcher(evidence: Dict, ta_index: int) -> Tuple[pd.DataFrame, str, int, str]:
         """Фетчер данных для PGM режима"""
         ta_name = evidence.get('target_audience_name', f'TA_{ta_index}')
         synthetic_size = evidence.get('synthetic_size', 10)
-        
+
         logger.info(f"[TA:{ta_name}] Генерация {synthetic_size} синтетических персон через PGM")
-        
+
         normalized_evidence = normalize_evidence(evidence)
         synthetic_data = generate_synthetic_data(
             model, evidence=normalized_evidence, size=synthetic_size
         )
         return synthetic_data, ta_name, synthetic_size, 'pgm_synthetic'
-    
+
     return await _process_target_audiences_generic(
         evidence_list=evidence_list,
         data_fetcher=data_fetcher,
@@ -303,23 +303,23 @@ async def filter_personas_from_real_data(
     ocean_flag: bool = True
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Фильтрация реальных российских персон по evidence"""
-    
+
     async def data_fetcher(evidence: Dict, ta_index: int) -> Tuple[pd.DataFrame, str, int, str]:
         """Фетчер данных для режима реальных данных"""
         ta_name = evidence.get('target_audience_name', f'TA_{ta_index}')
         sample_size = evidence.get('synthetic_size', 10)
-        
+
         logger.info(f"[TA:{ta_name}] Фильтрация реальных персон")
-        
+
         filtered_data = filter_real_russian_data(evidence, df_russian_preprocessed, sample_size)
-        
+
         if len(filtered_data) == 0:
             logger.warning(f"[TA:{ta_name}] Не найдено реальных персон с заданными критериями")
             empty_data = pd.DataFrame(columns=df_russian_preprocessed.columns)
             return empty_data, ta_name, sample_size, 'real_filtered'
-        
+
         return filtered_data, ta_name, len(filtered_data), 'real_filtered'
-    
+
     return await _process_target_audiences_generic(
         evidence_list=evidence_list,
         data_fetcher=data_fetcher,
@@ -340,34 +340,34 @@ async def _process_target_audiences_generic(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Общая функция для обработки целевых аудиторий
-    
+
     Args:
         evidence_list: Список целевых аудиторий
         data_fetcher: Функция для получения данных (PGM или реальных)
         nemo: Американские данные
         output_dir: Директория для сохранения
         ta_concurrency: Параллелизм обработки ЦА
-    
+
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: (все персоны, статистика по ЦА)
     """
-    
+
     async def process_target_audience(ta_index: int, evidence: Dict):
         """Обработка одной целевой аудитории - общая логика"""
         # 1. Получаем данные
         russian_data, ta_name, original_size, data_source = await data_fetcher(evidence, ta_index)
-        
+
         # 2. Проверяем, есть ли данные для обработки
         if len(russian_data) == 0:
             logger.warning(f"[TA:{ta_name}] Нет данных для обработки")
             return
-        
-        # 3. Нормализация features 
+
+        # 3. Нормализация features
         russian_norm, american_norm = normalize_features(russian_data, nemo)
 
         if ocean_flag:
-        
-            # 4. GMM кластеризация и репликация 
+
+            # 4. GMM кластеризация и репликация
             replicated_personas, clustering_stats = replicate_personas_with_gmm(
                 russian_df=russian_data,
                 russian_norm=russian_norm,
@@ -385,15 +385,15 @@ async def _process_target_audiences_generic(
 
         else:
             final_personas = russian_data
-           
-        # 5. Добавление метаданных 
+
+        # 5. Добавление метаданных
         final_personas = _add_metadata_to_personas(
             personas=final_personas,
             ta_index=ta_index,
             ta_name=ta_name,
             data_source=data_source
         )
-        
+
         # 6. Формирование статистики
         ta_stats = _create_ta_stats(
             ta_index=ta_index,
@@ -407,7 +407,7 @@ async def _process_target_audiences_generic(
 
         logger.info(f"[TA:{ta_name}] Обработка завершена: {len(final_personas)} персон")
         return final_personas, ta_stats
-    
+
     return await _process_target_audiences_parallel(
         evidence_list, process_target_audience, output_dir, ta_concurrency
     )
@@ -454,35 +454,35 @@ async def _process_target_audiences_parallel(
     ta_concurrency: int = 2
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Общая функция для параллельной обработки целевых аудиторий"""
-    
+
     logger.info(f"Параллельная обработка {len(evidence_list)} целевых аудиторий (параллелизм: {ta_concurrency})")
-    
+
     semaphore = asyncio.Semaphore(ta_concurrency)
-    
+
     async def process_with_semaphore(ta_index, evidence):
         async with semaphore:
             return await process_function(ta_index, evidence)
-    
+
     tasks = [
-        process_with_semaphore(i, evidence) 
+        process_with_semaphore(i, evidence)
         for i, evidence in enumerate(evidence_list)
     ]
-    
+
     results = await asyncio.gather(*tasks)
     all_personas_list, all_stats_list = zip(*results)
-    
+
     all_personas = pd.concat(all_personas_list, ignore_index=True)
     ta_summary_stats = pd.DataFrame(all_stats_list)
-    
+
     ta_summary_stats.to_csv(output_dir / 'target_audiences_summary.csv', index=False)
     total_personas = len(all_personas)
     total_tas = len(evidence_list)
     logger.info(f"Обработка завершена: {total_personas} персон через {total_tas} целевых аудиторий")
-    
+
     for _, row in ta_summary_stats.iterrows():
         logger.info(f"  • {row['target_audience_name']}: {row['replicated_size']} персон "
                    f"({row['unique_clusters']} кластеров) - {row['data_source']}")
-    
+
     return all_personas, ta_summary_stats
 
 def get_sim_reasonings(state: Dict) -> Dict[str, List[str]]:
@@ -639,7 +639,7 @@ def _build_target_audience_rows(evidence_list: List[Dict], all_personas: pd.Data
             p["UUID"]
             for _, p in all_personas[all_personas["target_audience_name"] == ta_name].iterrows()
         ]
-        
+
         rows.append({
             "UUID": get_uuid("target_audiences", str(group)),
             "embedding": get_embedding(str(group), query=False),

@@ -38,12 +38,12 @@ def _dump_model(model: Any) -> Dict[str, Any]:
 
 
 def _ensure_llm_env() -> None:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("YANDEX_API_KEY")
     folder_id = os.getenv("YANDEX_FOLDER_ID")
     if api_key and folder_id:
         return
     raise SystemExit(
-        "Missing LLM credentials. Set OPENAI_API_KEY and YANDEX_FOLDER_ID in the shell or in .env before running benchmark_credit_reasoning.py."
+        "Missing LLM credentials. Set YANDEX_API_KEY and YANDEX_FOLDER_ID in the shell or in .env before running benchmark_credit_reasoning.py."
     )
 
 

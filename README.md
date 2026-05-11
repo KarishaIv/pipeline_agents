@@ -21,7 +21,7 @@
 Рекомендуемая среда:
 - `Python 3.12`
 - `.env` с переменными:
-  - `OPENAI_API_KEY`
+  - `YANDEX_API_KEY`
   - `YANDEX_FOLDER_ID`
 
 Установка:

@@ -9,6 +9,7 @@ import os
 from typing import Dict
 
 from dotenv import load_dotenv
+load_dotenv(override=True)
 
 from config import *
 from src.data_loading import load_evidence_from_json
@@ -39,8 +40,8 @@ def parse_arguments():
     
     parser.add_argument('--evidence', type=str, default='./data/evidence.json',
                         help='Path to JSON file with evidence data')
-    parser.add_argument('--api_key', type=str, default=os.getenv("OPENAI_API_KEY"),
-                        help='Yandex GPT API key (or set OPENAI_API_KEY in .env)')
+    parser.add_argument('--api_key', type=str, default=os.getenv("YANDEX_API_KEY"),
+                        help='Yandex GPT API key (or set YANDEX_API_KEY in .env)')
     parser.add_argument('--folder_id', type=str, default=os.getenv("YANDEX_FOLDER_ID"),
                         help='Yandex Cloud Folder ID (or set YANDEX_FOLDER_ID in .env)')
     parser.add_argument('--nemo_size', type=int, default=DEFAULT_NEMO_SIZE,
@@ -87,10 +88,10 @@ def main():
     args = parse_arguments()
     
     setup_logging()
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    api_key = args.api_key or os.getenv("YANDEX_API_KEY")
     folder_id = args.folder_id or os.getenv("YANDEX_FOLDER_ID")
     if not api_key:
-        raise SystemExit("API key not provided. Use --api_key or set OPENAI_API_KEY in .env.")
+        raise SystemExit("API key not provided. Use --api_key or set YANDEX_API_KEY in .env.")
 
     # Prepare world_contexts from --news-context-path (done outside orchestration)
     # so that world_contexts.parquet gets populated on save.

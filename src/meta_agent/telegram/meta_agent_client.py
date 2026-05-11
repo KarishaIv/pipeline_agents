@@ -101,4 +101,3 @@ class MetaAgentClient:
         except httpx.HTTPError as e:
             logger.error("HTTP error fetching artifact from %s: %s", artifact_url, e)
             raise
-

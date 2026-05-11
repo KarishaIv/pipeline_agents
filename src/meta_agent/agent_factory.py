@@ -2,12 +2,11 @@
 
 import logging
 import os
+from dataclasses import dataclass
+from typing import Any
 
 from sgr_agent_core import AgentConfig
 from sgr_agent_core.agents.tool_calling_agent import ToolCallingAgent
-from sgr_agent_core.base_tool import BaseTool
-
-import src.meta_agent.lib_patches  # noqa: F401  apply all third-party patches
 
 from config import get_model_uri, YANDEX_BASE_URL
 from src.meta_agent.configs import LLM_TEMPERATURE, MAX_AGENT_ITERATIONS

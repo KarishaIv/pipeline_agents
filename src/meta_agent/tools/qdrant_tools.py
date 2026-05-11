@@ -5,7 +5,7 @@ QdrantService — singleton.
 
 from __future__ import annotations
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import Field
 from sgr_agent_core.base_tool import BaseTool
@@ -48,7 +48,7 @@ def get_qdrant_service() -> QdrantService:
 def build_collection_schema(collection_name: str) -> Dict[str, Any]:
     """Call ``get_collection`` and return name, status, points_count,
     vector_names, and payload_fields (from ``payload_schema``)."""
-    info = _qdrant.get_collection(collection_name=collection_name)
+    info = get_qdrant_service().get_collection(collection_name=collection_name)
 
     params = getattr(info.config, "params", None)
     vec = getattr(params, "vectors", None) if params else None

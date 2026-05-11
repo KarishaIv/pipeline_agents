@@ -26,7 +26,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config import set_openai_api_key
 from src.schemas.decision_schema import DecisionOutcome
 from src.utils import robust_llm_call
 
@@ -402,9 +401,6 @@ def main() -> int:
     parser.add_argument("--baseline-sample", type=int, default=None, help="Rows to use for baseline (default: all).")
     parser.add_argument("--out-dir", default="outputs/benchmarks/hmda", help="Output directory.")
     args = parser.parse_args()
-
-    if args.api_key:
-        set_openai_api_key(args.api_key, args.folder_id)
 
     path = Path(args.hmda_path)
     if not path.exists():

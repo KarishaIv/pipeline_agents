@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def append_list(left: list[Any], right: list[Any] | Any | None) -> list[Any]:
     """Generic reducer for appending items to lists.
-    
+
     Supports:
     - None: returns unchanged left list
     - Single item (dict or other): converts to list and appends

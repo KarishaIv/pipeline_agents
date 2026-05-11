@@ -57,7 +57,7 @@ class SimulationManager:
         self._sem = asyncio.Semaphore(concurrency)
         self.timeout = timeout
         # legacy flag kept for backward compatibility
-        self.visualize = visualize
+        self.visualize = False
         self.run_retries = run_retries
         self.executor = ThreadPoolExecutor(max_workers=executor_workers)
         self.agent_mode = agent_mode
