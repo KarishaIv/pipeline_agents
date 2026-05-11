@@ -4,13 +4,10 @@ This test uses the actual SqliteSaver to see if the issue happens during
 checkpoint storage/retrieval.
 """
 
-import json
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from src.meta_agent.dto import DtoPayload
@@ -43,13 +40,13 @@ def test_model_dump_converts_dto_to_dict():
         iterations=0,
     )
 
-    print(f"\nBefore model_dump():")
+    print("\nBefore model_dump():")
     print(f"  state.dto_store['test_dto'] type: {type(state.dto_store['test_dto'])}")
     print(f"  Is DtoPayload? {isinstance(state.dto_store['test_dto'], DtoPayload)}")
 
     # Convert to dict (what would be saved to checkpoint)
     state_dict = state.model_dump()
-    print(f"\nAfter model_dump():")
+    print("\nAfter model_dump():")
     print(f"  state_dict['dto_store']['test_dto'] type: {type(state_dict['dto_store']['test_dto'])}")
     print(f"  Is DtoPayload? {isinstance(state_dict['dto_store']['test_dto'], DtoPayload)}")
     print(f"  Is dict? {isinstance(state_dict['dto_store']['test_dto'], dict)}")
@@ -60,7 +57,7 @@ def test_model_dump_converts_dto_to_dict():
     # But can we get it back?
     reconstructed = MetaAgentState.model_validate(state_dict)
     dto_item = reconstructed.dto_store.get("test_dto")
-    print(f"\nAfter model_validate on dumped state:")
+    print("\nAfter model_validate on dumped state:")
     print(f"  reconstructed.dto_store['test_dto'] type: {type(dto_item)}")
     print(f"  Is DtoPayload? {isinstance(dto_item, DtoPayload)}")
 
@@ -117,7 +114,7 @@ def test_checkpoint_save_with_json_encoding(tmp_path):
         # retrieved is a dict with channel_values
         assert "channel_values" in retrieved
         assert retrieved["channel_values"].get("dto_store") is not None
-        print(f"\nCheckpoint saved and retrieved successfully")
+        print("\nCheckpoint saved and retrieved successfully")
         print(f"  dto_store keys: {list(retrieved['channel_values'].get('dto_store', {}).keys())}")
     finally:
         conn.close()
@@ -166,7 +163,7 @@ def test_checkpoint_list_and_retrieve(tmp_path):
 
         # Use list() API
         checkpoints = list(saver.list(config))
-        print(f"\nCheckpoint list API:")
+        print("\nCheckpoint list API:")
         print(f"  Number of checkpoints: {len(checkpoints)}")
         if checkpoints:
             cp = checkpoints[0]

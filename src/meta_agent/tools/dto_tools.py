@@ -105,6 +105,20 @@ def _next_dto_name(context: "AgentContext", source: str) -> str:
     return candidate
 
 
+def _truncate_subfields(value: Any, max_len: int = 100) -> Any:
+    """Recursively truncate any string subfield to <= max_len chars.
+
+    Prevents long text values in DTO samples from overflowing agent context.
+    """
+    if isinstance(value, str):
+        return value[:max_len] if len(value) > max_len else value
+    if isinstance(value, dict):
+        return {k: _truncate_subfields(v, max_len) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_truncate_subfields(item, max_len) for item in value]
+    return value
+
+
 def dto_summary_view(dto_name: str, dto_payload: DtoPayload, max_len: int = 100) -> DtoSummary:
     """Вернуть краткое представление DTO."""
     return dto_payload.get_summary(dto_name, max_len)
@@ -147,15 +161,26 @@ class ListDtoNamesTool(BaseTool):
     """Вернуть список всех DTO, доступных в custom_context."""
 
     tool_name = "list_dtos"
-    description = "Показать имена всех доступных DTO и их краткие сводки (без полного набора данных)."
+    description = (
+        "Показать имена всех доступных DTO и их краткие сводки (без полного набора данных). "
+        "По умолчанию (include_empty=false) скрывает DTO с num_rows=0. "
+    )
 
     reasoning: str = Field(description="Зачем нужен просмотр доступных DTO")
+    include_empty: bool = Field(
+        default=False,
+        description=(
+            "Включать ли DTO с num_rows == 0. "
+            "По умолчанию false."
+        ),
+    )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         store = get_dto_store(context)
         dto_items = [
             dto_summary_view(name, payload, 50)
             for name, payload in sorted(store.items())
+            if self.include_empty or payload.num_rows > 0
         ]
         return serialize_tool_result({
             "dto_count": len(dto_items),
@@ -186,13 +211,14 @@ class SampleDtoTool(BaseTool):
             )
 
         sample = dto.rows[self.start : self.start + self.sample_size]
+        truncated_sample = _truncate_subfields(sample)
         return serialize_tool_result({
             "dto_name": self.dto_name,
             "columns": dto.columns,
             "num_rows": dto.num_rows,
             "start": self.start,
             "sample_size": len(sample),
-            "sample": sample,
+            "sample": truncated_sample,
         })
 
 

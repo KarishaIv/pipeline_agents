@@ -5,7 +5,6 @@ catalog generation, and env-based config.
 """
 import importlib
 from typing import get_args
-from pathlib import Path
 
 import pytest
 
@@ -16,16 +15,7 @@ from src.meta_agent.configs import (
     get_collection_catalog,
 )
 from src.meta_agent.configs import (
-    BIG_MODEL,
     CHARTS_DIR,
-    CODE_TIMEOUT,
-    LLM_MODEL,
-    MAX_AGENT_ITERATIONS,
-    MAX_DELEGATED_ATTEMPTS,
-    MAX_HISTORY_CHARS,
-    MAX_SUPERVISOR_ITERATIONS,
-    QDRANT_HOST,
-    QDRANT_PORT,
 )
 from src.meta_agent.prompts import (
     ANALYZER_SYSTEM,
@@ -77,7 +67,7 @@ def test_prompts_contain_key_elements():
 
     # Catalog is injected
     assert _COLLECTION_CATALOG in EXTRACTOR_SYSTEM
-    assert "DTO_DATA_JSON" in CODE_WRITER_SYSTEM
+    assert "DTOS_DATA_JSON" in CODE_WRITER_SYSTEM
 
     # Decision tools mentioned
     assert "supervisor_decision" in SUPERVISOR_SYSTEM.lower()
@@ -100,7 +90,6 @@ def test_config_env_overrides(monkeypatch):
 def test_config_charts_dir_resolution():
     """Test CHARTS_DIR uses the data directory under PROJECT_ROOT."""
     from config import PROJECT_ROOT
-    from src.meta_agent.configs import CHARTS_DIR
 
     assert CHARTS_DIR == PROJECT_ROOT / "data" / "charts"
     assert CHARTS_DIR.parent.name == "data"

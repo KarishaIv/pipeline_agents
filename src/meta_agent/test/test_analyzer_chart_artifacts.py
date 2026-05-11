@@ -1,7 +1,7 @@
 """Tests for analyzer chart tools with artifact registration (should fail before implementation)."""
 import json
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 import pandas as pd
 
 from src.meta_agent.dto import DtoPayload

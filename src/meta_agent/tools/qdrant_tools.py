@@ -117,7 +117,7 @@ class QdrantSearchTool(BaseTool):
         default="embedding",
         description="Имя вектора для поиска (из схемы коллекции).",
     )
-    limit: int = Field(default=5, description="Максимальное количество точек для регистрации в DTO")
+    limit: int = Field(default=1000, description="Максимальное количество точек для регистрации в DTO")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
@@ -154,7 +154,7 @@ class QdrantFilterTool(BaseTool):
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
     field: str = Field(description='Имя поля payload для фильтра (например "question", "name")')
     value: str = Field(description="Ожидаемое точное значение поля")
-    limit: int = Field(default=10, description="Максимальное количество точек для регистрации в DTO")
+    limit: int = Field(default=1000, description="Максимальное количество точек для регистрации в DTO")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
         try:
@@ -190,7 +190,7 @@ class QdrantScrollTool(BaseTool):
 
     reasoning: str = Field(description="Зачем нужна эта страница точек")
     collection: CollectionName = Field(description=COLLECTION_ENUM_DESC)
-    limit: int = Field(default=10, description="Размер запрашиваемой страницы")
+    limit: int = Field(default=1000, description="Размер запрашиваемой страницы")
     offset: Optional[str] = Field(default=None, description="Смещение страницы, если оно заранее известно")
     payload_fields: List[str] = Field(
         default_factory=list,

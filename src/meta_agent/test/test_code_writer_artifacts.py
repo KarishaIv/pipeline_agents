@@ -1,6 +1,6 @@
 """Tests for code writer save_chart and artifact propagation (should fail before implementation)."""
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 
 @pytest.mark.asyncio
@@ -77,6 +77,6 @@ async def test_execute_code_tool_registers_artifact_in_context(sample_dto_data, 
     await tool(mock_context, mock_config)
 
     # If artifacts were created, they should be in context
-    artifacts = mock_context.custom_context.get("artifacts", [])
+    mock_context.custom_context.get("artifacts", [])
     # This test is lenient since save_chart may not create files in test sandbox
     # The key is that the mechanism exists for registering artifacts

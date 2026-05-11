@@ -97,9 +97,16 @@ def test_qdrant_service_get_collection_schema():
     with patch("src.meta_agent.services.qdrant.QdrantClient") as mock_client_class:
         QdrantService._instance = None
         mock_client = MagicMock()
+        payload_field_schema = SimpleNamespace(data_type="keyword", points=95)
         mock_client.get_collection.return_value = SimpleNamespace(
-            payload_schema={"field": "keyword"},
-            vectors={"embedding": {"size": 1536}},
+            payload_schema={"field": payload_field_schema},
+            config=SimpleNamespace(
+                params=SimpleNamespace(
+                    vectors={"embedding": {"size": 1536}},
+                )
+            ),
+            status="green",
+            points_count=100,
         )
         mock_client_class.return_value = mock_client
 
@@ -107,8 +114,11 @@ def test_qdrant_service_get_collection_schema():
         schema = service.get_collection_schema("personas")
 
     assert schema["collection"] == "personas"
-    assert "field" in schema["payload_schema"]
-    assert "embedding" in schema["vectors"]
+    assert schema["status"] == "green"
+    assert schema["points_count"] == 100
+    assert schema["payload_schema"]["field"] == {"data_type": "keyword", "points": 95}
+    assert schema["payload_schema"]["UUID"] == {"data_type": "keyword", "points": 100}
+    assert schema["vectors"] == ["embedding"]
 
 
 def test_point_to_dict_conversion():

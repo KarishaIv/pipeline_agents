@@ -1,7 +1,7 @@
 """Tests for multipart image upload to Telegram (regression tests for breaking change)."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.mark.asyncio

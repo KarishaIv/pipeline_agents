@@ -65,7 +65,7 @@ def test_make_openai_client(mock_wrap, mock_asyncopenai, monkeypatch):
     monkeypatch.setenv("YANDEX_FOLDER_ID", "test-folder")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
 
-    client = make_openai_client()
+    make_openai_client()
     assert mock_asyncopenai.called
     # Wrapping happens when tracing enabled
     assert mock_wrap.called

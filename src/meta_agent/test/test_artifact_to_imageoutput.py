@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from pathlib import Path
 
 from src.meta_agent.graph import MetaAgentGraphManager
 from src.meta_agent.output_models import ImageOutput, AgentArtifact

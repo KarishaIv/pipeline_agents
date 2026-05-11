@@ -43,14 +43,14 @@ class CodeExecutionConfig:
     Attributes:
         timeout: Execution timeout in seconds (default 30).
         max_stdout: Maximum stdout/stderr capture size in bytes (default 100KB).
-        dto_payload: Optional DTO payload to inject into sandbox.
+        dto_payloads: Optional dict of DTO name -> payload to inject into sandbox.
         charts_dir: Directory for saving matplotlib figures.
         sandbox_globals: Optional override of sandbox global namespace.
     """
 
     timeout: int = 30
     max_stdout: int = 102400
-    dto_payload: Optional[DtoPayload] = None
+    dto_payloads: Optional[dict[str, DtoPayload]] = None
     charts_dir: Optional[Path] = None
     sandbox_globals: Optional[dict[str, Any]] = None
 
@@ -62,12 +62,12 @@ class CodeExecutionService:
     - Subprocess creation with resource isolation
     - Reliable timeout handling with process cleanup
     - Sandbox environment with safe builtins
-    - DTO data injection via environment variables
+    - Multiple DTOs injection via DTOS_DATA_JSON env var
     - Output capture with size limits
     - Chart file management
     """
 
-    DTO_ENV_VAR = "DTO_DATA_JSON"
+    DTOS_ENV_VAR = "DTOS_DATA_JSON"
 
     def __init__(self, config: CodeExecutionConfig):
         """Initialize CodeExecutionService with configuration.
@@ -91,27 +91,28 @@ class CodeExecutionService:
         Returns:
             Python code that sets up the sandbox and executes user code.
         """
-        # Prepare DTO data if provided
+        # Prepare DTO data if provided (multiple DTOs)
         dto_import = ""
         dto_setup = ""
-        if self.config.dto_payload is not None:
+        if self.config.dto_payloads is not None and len(self.config.dto_payloads) > 0:
             dto_import = "import json"
             dto_setup = """
 import os
-dto_json = os.environ.get('DTO_DATA_JSON', '{}')
+dtos_json = os.environ.get('DTOS_DATA_JSON', '{}')
 try:
-    dto = json.loads(dto_json)
+    dtos = json.loads(dtos_json)
 except json.JSONDecodeError:
-    dto = {}
+    dtos = {}
 """
 
-        # Prepare save_chart function (always available, with fallback to temp dir if needed)
+        # Prepare save_chart + raw data save functions (always available, with fallback to temp dir if needed)
         save_chart_func = f"""
 import os as _os
 from pathlib import Path as _Path
 from uuid import uuid4 as _uuid4
 from datetime import datetime as _datetime
 import tempfile as _tempfile
+import json as _json
 
 # Use provided charts_dir or fallback to temp directory
 _charts_dir = _Path(r'{str(self.config.charts_dir)}') if {self.config.charts_dir is not None} else _Path(_tempfile.gettempdir()) / 'agent_charts'
@@ -138,9 +139,98 @@ def save_chart(filename=None):
     if not safe_name.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
         safe_name += '.png'
 
+    # Append short unique suffix to every saved chart file (prevents collisions on repeated calls)
+    _unique = _uuid4().hex[:8]
+    if '.' in safe_name:
+        _base, _ext = safe_name.rsplit('.', 1)
+        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
+    else:
+        safe_name = f"{{safe_name}}_{{_unique}}"
+
     target_path = _charts_dir / safe_name
     plt.savefig(str(target_path), bbox_inches='tight', dpi=150)
     plt.close()
+    return str(target_path)
+
+
+def save_json(data, filename=None):
+    \"\"\"Save raw data (list, dict or DataFrame) as JSON artifact. Only raw source data - no aggregations.
+
+    Args:
+        data: Raw data to persist (list of records, dict, or pandas DataFrame).
+        filename: Optional filename. If None, auto-generates timestamp-based name.
+
+    Returns:
+        Path to the saved JSON file.
+    \"\"\"
+    if filename is None:
+        filename = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.json"
+
+    # Sanitize filename
+    import re as _re
+    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
+    safe_name = _re.sub(r'_+', '_', safe_name)
+    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
+        safe_name = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.json"
+    if not safe_name.lower().endswith('.json'):
+        safe_name += '.json'
+
+    # Append short unique suffix to every saved JSON file (prevents collisions)
+    _unique = _uuid4().hex[:8]
+    if '.' in safe_name:
+        _base, _ext = safe_name.rsplit('.', 1)
+        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
+    else:
+        safe_name = f"{{safe_name}}_{{_unique}}"
+
+    # Convert DataFrame to records if needed, keep raw
+    if hasattr(data, 'to_dict'):
+        records = data.to_dict(orient='records')
+    else:
+        records = data
+
+    target_path = _charts_dir / safe_name
+    with open(target_path, 'w', encoding='utf-8') as f:
+        _json.dump(records, f, ensure_ascii=False, indent=2)
+    return str(target_path)
+
+
+def save_csv(data, filename=None):
+    \"\"\"Save raw data (DataFrame or list of dicts) as CSV artifact. Only raw source data - no aggregations or stats.
+
+    Args:
+        data: Raw data (pandas DataFrame or list of records).
+        filename: Optional filename. If None, auto-generates timestamp-based name.
+
+    Returns:
+        Path to the saved CSV file.
+    \"\"\"
+    if filename is None:
+        filename = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.csv"
+
+    # Sanitize filename
+    import re as _re
+    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
+    safe_name = _re.sub(r'_+', '_', safe_name)
+    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
+        safe_name = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.csv"
+    if not safe_name.lower().endswith('.csv'):
+        safe_name += '.csv'
+
+    # Append short unique suffix to every saved CSV file (prevents collisions)
+    _unique = _uuid4().hex[:8]
+    if '.' in safe_name:
+        _base, _ext = safe_name.rsplit('.', 1)
+        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
+    else:
+        safe_name = f"{{safe_name}}_{{_unique}}"
+
+    target_path = _charts_dir / safe_name
+    if hasattr(data, 'to_csv'):
+        data.to_csv(target_path, index=False)
+    else:
+        import pandas as _pd
+        _pd.DataFrame(data).to_csv(target_path, index=False)
     return str(target_path)
 """
 
@@ -221,14 +311,17 @@ _safe_builtins = {{
 # Setup DTO if provided
 {dto_setup}
 
-# Create DataFrame if DTO exists
+# Create DataFrames from DTOs
 try:
-    if 'dto' in locals() and isinstance(dto, dict) and 'rows' in dto:
-        df = pd.DataFrame(dto['rows'])
+    if 'dtos' in locals() and isinstance(dtos, dict):
+        dfs = {{}}
+        for name, d in dtos.items():
+            if isinstance(d, dict) and 'rows' in d:
+                dfs[name] = pd.DataFrame(d['rows'])
     else:
-        df = pd.DataFrame()
+        dfs = {{}}
 except Exception:
-    df = pd.DataFrame()
+    dfs = {{}}
 
 # Setup save_chart function if charts directory is available
 {save_chart_func}
@@ -246,11 +339,15 @@ _namespace = {{
 
 if 'save_chart' in locals():
     _namespace['save_chart'] = save_chart
+if 'save_json' in locals():
+    _namespace['save_json'] = save_json
+if 'save_csv' in locals():
+    _namespace['save_csv'] = save_csv
 
-if 'dto' in locals():
-    _namespace['dto'] = dto
-if 'df' in locals():
-    _namespace['df'] = df
+if 'dtos' in locals():
+    _namespace['dtos'] = dtos
+if 'dfs' in locals():
+    _namespace['dfs'] = dfs
 
 # Execute user code
 try:
@@ -293,18 +390,17 @@ except Exception:
         """
         # Prepare environment with DTO data if provided
         env = os.environ.copy()
-        if self.config.dto_payload is not None:
+        if self.config.dto_payloads is not None and len(self.config.dto_payloads) > 0:
             try:
-                dto_json = json.dumps(
-                    self.config.dto_payload.model_dump(),
-                    ensure_ascii=False,
-                    default=str,
-                )
-                env[self.DTO_ENV_VAR] = dto_json
-            except (json.JSONDecodeError, ValueError) as e:
+                dtos_dict = {
+                    name: payload.model_dump() for name, payload in self.config.dto_payloads.items()
+                }
+                dtos_json = json.dumps(dtos_dict, ensure_ascii=False, default=str)
+                env[self.DTOS_ENV_VAR] = dtos_json
+            except Exception as e:
                 return ExecutionResult(
                     stdout="",
-                    stderr=f"Failed to serialize DTO payload: {e}",
+                    stderr=f"Failed to serialize DTO payloads: {e}",
                     exit_code=1,
                     timeout_occurred=False,
                 )

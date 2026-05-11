@@ -18,6 +18,22 @@ from config import *
 
 logger = logging.getLogger(__name__)
 
+
+def _json_safe_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Values safe for json.dumps (parquet row dicts may contain numpy ndarrays)."""
+    safe: Dict[str, Any] = {}
+    for key, value in profile.items():
+        if key == "embedding":
+            continue
+        if isinstance(value, np.ndarray):
+            safe[key] = value.tolist()
+        elif isinstance(value, (np.integer, np.floating, np.bool_)):
+            safe[key] = value.item()
+        else:
+            safe[key] = value
+    return safe
+
+
 class SimulationManager:
     """
     Менеджер для параллельных симуляций
@@ -128,9 +144,9 @@ class SimulationManager:
             except Exception as e:
                 logger.error(f"[Run:{run_id}] FAILED: {e}")
                 failure = {
-                    "run_id": run_id, 
-                    "profile": profile, 
-                    "error": str(e), 
+                    "run_id": run_id,
+                    "profile": _json_safe_profile(profile),
+                    "error": str(e),
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 await StorageManager.save_json_async(failure, out_dir / f"{run_id}_error.json")

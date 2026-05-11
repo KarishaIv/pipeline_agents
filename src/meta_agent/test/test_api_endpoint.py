@@ -1,7 +1,7 @@
 """Tests for the structured POST /ask API endpoint."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from src.meta_agent import (
     AskRequest,
     MetaAgentApiResponse,

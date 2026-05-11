@@ -20,7 +20,7 @@ from src.meta_agent.prompts.code_writer import (
     CODE_WRITER_SYSTEM,
     _CODE_WRITER_TOOLS,
     _CODE_WRITER_TOOLS_BLOCK,
-    _CODE_WRITER_DTO_ENV_VAR,
+    _CODE_WRITER_DTOS_ENV_VAR,
 )
 from src.meta_agent.prompts.history import HISTORY_SUMMARIZER_SYSTEM
 from src.meta_agent.prompts.ood import OOD_CHECKER_SYSTEM
@@ -40,5 +40,5 @@ __all__ = [
     "_ANALYZER_TOOLS_BLOCK",
     "_CODE_WRITER_TOOLS",
     "_CODE_WRITER_TOOLS_BLOCK",
-    "_CODE_WRITER_DTO_ENV_VAR",
+    "_CODE_WRITER_DTOS_ENV_VAR",
 ]

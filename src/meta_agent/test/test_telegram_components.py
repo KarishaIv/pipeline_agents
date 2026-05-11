@@ -890,7 +890,7 @@ async def test_message_handler_new_deletes_empty_sessions(tmp_path):
 
     try:
         # Create an existing default empty session
-        session1 = session_store.create_session(123, 456, "", "session_1", activate=True)
+        session_store.create_session(123, 456, "", "session_1", activate=True)
 
         # Call /new via message handler
         msg = TelegramMessage(chat_id=123, user_id=456, message_id=1, text="", is_command=True, command="new")
@@ -958,7 +958,7 @@ async def test_message_handler_switch_deletes_empty_old_session(tmp_path):
     try:
         # Create two default empty sessions
         session1 = session_store.create_session(123, 456, "", "session_1", activate=True)
-        session2 = session_store.create_session(123, 456, "", "session_2", activate=False)
+        session_store.create_session(123, 456, "", "session_2", activate=False)
 
         sessions = session_store.list_sessions(123, 456)
         assert len(sessions) == 2
@@ -999,7 +999,7 @@ async def test_message_handler_callback_switch_deletes_empty_old_session(tmp_pat
     try:
         # Create two default empty sessions
         session1 = session_store.create_session(123, 456, "", "session_1", activate=True)
-        session2 = session_store.create_session(123, 456, "", "session_2", activate=False)
+        session_store.create_session(123, 456, "", "session_2", activate=False)
 
         sessions = session_store.list_sessions(123, 456)
         assert len(sessions) == 2
@@ -1036,7 +1036,7 @@ async def test_message_handler_switch_keeps_old_session_with_messages(tmp_path):
     try:
         # Create two sessions
         session1 = session_store.create_session(123, 456, "", "session_1", activate=True)
-        session2 = session_store.create_session(123, 456, "", "session_2", activate=False)
+        session_store.create_session(123, 456, "", "session_2", activate=False)
 
         # Mark session1 as having messages
         session_store.mark_session_has_messages(123, 456, session1.thread_id)
@@ -1075,8 +1075,8 @@ async def test_message_handler_switch_keeps_user_named_sessions(tmp_path):
 
     try:
         # Create user-named and default session
-        user_session = session_store.create_session(123, 456, "", "work", activate=True)
-        default_session = session_store.create_session(123, 456, "", "session_2", activate=False)
+        session_store.create_session(123, 456, "", "work", activate=True)
+        session_store.create_session(123, 456, "", "session_2", activate=False)
 
         # Switch to session_2
         msg = TelegramMessage(

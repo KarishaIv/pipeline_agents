@@ -29,38 +29,53 @@ class ExecuteCodeTool(BaseTool):
     """Выполнить Python-код для code_writer в сервисе исполнения.
 
     CodeExecutionService отвечает за отдельный процесс, timeout, передачу DTO
-    и сбор вывода. PNG-графики, созданные через save_chart(), регистрируются
-    как артефакты по недавно изменённым файлам в CHARTS_DIR.
+    и сбор вывода. Файлы (PNG/JSON/CSV), созданные через save_*(), регистрируются
+    как артефакты по недавно изменённым файлам в CHARTS_DIR. JSON/CSV — только raw source data.
     """
 
     tool_name = "execute_code"
     description = (
-        "Выполнить Python-код для анализа выбранного DTO через CodeExecutionService. "
-        "В коде доступны dto, df, np, pd, plt, math, json, stats и save_chart(). "
-        "stdout возвращается в output; stderr возвращается в error. PNG, созданные через save_chart(), "
-        "регистрируются как артефакты."
+        "Выполнить Python-код для анализа DTO (можно несколько) через CodeExecutionService. "
+        "В коде доступны dtos (dict по именам), dfs (dataframes), np, pd, plt, math, json, stats, save_chart(), save_json() и save_csv(). "
+        "stdout возвращается в output; stderr возвращается в error. Файлы (PNG/JSON/CSV), созданные через save_*(), "
+        "регистрируются как артефакты (JSON/CSV содержат только raw source data)."
     )
 
     reasoning: str = Field(description="Что вычисляет код и зачем")
-    dto_name: str = Field(description="Имя DTO, с которым нужно работать в коде")
+    dto_names: list[str] = Field(default_factory=list, description="Список имён DTO для использования в коде (можно несколько для кросс-DTO анализа)")
     code: str = Field(
         description=(
             "Код Python для выполнения. Уже импортированы: np, pd, plt, math, json, stats. "
-            "Также доступны dto (dict DTO) и df (DataFrame из DTO rows). "
+            "Также доступны dtos (dict name->payload), dfs (dataframes). "
             "Для сохранения графика используй save_chart('file.png'). Вывод — через print()."
         )
     )
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        _, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
-        if error:
-            return error
-        assert dto_payload is not None
+        dto_payloads: dict[str, Any] = {}
+        errors = []
+        for name in self.dto_names or []:
+            _, payload, error = resolve_dto_or_error(context, name)
+            if error:
+                errors.append(error)
+            elif payload is not None:
+                dto_payloads[name] = payload
+        if errors:
+            return "\n".join(errors)
+        if not dto_payloads:
+            return serialize_tool_result({"error": "No valid DTO names provided"})
+
+        # Snapshot existing chart files before execution so we can detect only newly created ones
+        existing_files: set[Path] = set()
+        if CHARTS_DIR.exists():
+            exts = ("*.png", "*.json", "*.csv")
+            for pattern in exts:
+                existing_files.update(CHARTS_DIR.glob(pattern))
 
         executor = CodeExecutionService(
             config=CodeExecutionConfig(
                 timeout=CODE_TIMEOUT,
-                dto_payload=dto_payload,
+                dto_payloads=dto_payloads,
                 charts_dir=CHARTS_DIR,
             )
         )
@@ -69,7 +84,7 @@ class ExecuteCodeTool(BaseTool):
 
         output = result.stdout or "(нет вывода)"
         response: dict[str, Any] = {
-            "dto_name": self.dto_name,
+            "dto_names": self.dto_names,
             "output": output,
         }
 
@@ -85,25 +100,25 @@ class ExecuteCodeTool(BaseTool):
         if 'artifacts' not in context.custom_context:
             context.custom_context['artifacts'] = []
 
-        # save_chart() сохраняет PNG в CHARTS_DIR; регистрируем недавно созданные файлы.
-        if "save_chart" in self.code and CHARTS_DIR.exists():
+        # Register only newly created artifacts (charts, JSON/CSV raw data sources)
+        if CHARTS_DIR.exists():
             try:
-                import time as time_module
-                current_time = time_module.time()
-                for chart_file in CHARTS_DIR.glob("*.png"):
-                    if current_time - chart_file.stat().st_mtime < 10:
-                        artifact = AgentArtifact(
-                            id=str(uuid4()),
-                            kind="chart",
-                            path=str(chart_file),
-                            filename=chart_file.name,
-                            mime_type="image/png",
-                            caption=f"Chart: {chart_file.name}",
-                            metadata={"source": "code_execution"},
-                        )
-                        context.custom_context['artifacts'].append(artifact)
+                exts_map = {"*.png": ("chart", "image/png"), "*.json": ("data", "application/json"), "*.csv": ("csv", "text/csv")}
+                for pattern, (kind, mime) in exts_map.items():
+                    for f in CHARTS_DIR.glob(pattern):
+                        if f not in existing_files:
+                            artifact = AgentArtifact(
+                                id=str(uuid4()),
+                                kind=kind,
+                                path=str(f),
+                                filename=f.name,
+                                mime_type=mime,
+                                caption=f"{kind.upper()}: {f.name}",
+                                metadata={"source": "code_execution"},
+                            )
+                            context.custom_context['artifacts'].append(artifact)
             except Exception as e:
-                logger.warning("Failed to register chart artifacts from code execution: %s", e)
+                logger.warning("Failed to register artifacts from code execution: %s", e)
 
         return serialize_tool_result(response)
 
@@ -119,17 +134,20 @@ class ValidateCodeTool(BaseTool):
     )
 
     reasoning: str = Field(description="Зачем нужна статическая проверка и какие риски ожидаются")
-    dto_name: str = Field(description="Имя DTO, с которым валидируется код")
+    dto_names: list[str] = Field(default_factory=list, description="Список имён DTO для валидации кода")
     code: str = Field(description="Код Python только для статической проверки")
 
     async def __call__(self, context: "AgentContext", config: "AgentConfig", **_) -> str:
-        _, dto_payload, error = resolve_dto_or_error(context, self.dto_name)
-        if error:
-            return error
-        assert dto_payload is not None
+        errors = []
+        for name in self.dto_names or []:
+            _, payload, error = resolve_dto_or_error(context, name)
+            if error:
+                errors.append(error)
+        if errors:
+            return "\n".join(errors)
 
         diagnostics: dict[str, Any] = {
-            "dto_name": self.dto_name,
+            "dto_names": self.dto_names,
             "is_runnable": False,
             "errors": [],
             "warnings": [],

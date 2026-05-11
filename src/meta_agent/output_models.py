@@ -4,7 +4,7 @@
 ImageOutput, FileOutput) и внутренней метаинформации артефактов.
 """
 
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, Union
 from pydantic import BaseModel, Field
 from uuid import uuid4
 
@@ -20,7 +20,7 @@ class JsonOutput(BaseModel):
     """JSON-результат со структурированными данными."""
 
     type: Literal["json"] = Field(default="json", description="Идентификатор типа результата")
-    data: dict[str, Any] = Field(..., description="Структурированные JSON-данные")
+    data: Union[dict[str, Any], list[Any]] = Field(..., description="Структурированные JSON-данные (объект или массив)")
     caption: Optional[str] = Field(
         default=None, description="Опциональная подпись или метаданные для JSON"
     )

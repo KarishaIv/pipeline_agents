@@ -128,10 +128,13 @@ async def data_extractor_node(state: dict | Any, config: RunnableConfig | None =
     и запросы, затем отчитывается через DataExtractionReportTool.
     """
     state = state_to_dict(state)
+    prior_data = await _get_prior_worker_history(state)
     task = (
         f"Задача от супервайзера: {state.get('current_task', '')}\n\n"
-        f"Контекст — исходный вопрос пользователя: {state.get('question', '')}"
+        f"Исходный вопрос: {state.get('question', '')}"
     )
+    if prior_data:
+        task += f"\n\nИстория предыдущих шагов:\n{prior_data}"
 
     definition = _get_worker_definition("data_extractor")
     parsed, result = await run_structured_worker(state, definition, task)
@@ -270,7 +273,19 @@ async def ood_checker_node(state: dict | Any, config: RunnableConfig | None = No
     if not question:
         return {"next_worker": "end", "outputs": [{"type": "text", "text": "Пожалуйста, задайте вопрос."}]}
 
-    prompt = OOD_CHECKER_SYSTEM.format(question=question)
+    history = state.get("history", [])
+    previous_steps = "Нет предыдущих шагов."
+    if history:
+        try:
+            previous_steps = await summarize_history_text(history, max_chars=MAX_HISTORY_CHARS)
+        except Exception:
+            # fallback to last few messages
+            previous_steps = "\n\n".join(
+                f"[{m.get('role','?').upper()}]: {str(m.get('content',''))[:200]}"
+                for m in history[-3:]
+            )
+
+    prompt = OOD_CHECKER_SYSTEM.format(question=question, previous_steps=previous_steps)
     result = await robust_llm_call(prompt, structured_output=OODCheckResult)
 
     if isinstance(result, dict):

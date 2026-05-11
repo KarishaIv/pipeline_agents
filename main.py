@@ -3,12 +3,15 @@ warnings.filterwarnings('ignore')
 
 import argparse
 import asyncio
+import json
 import logging
 import os
-from pathlib import Path
+from typing import Dict
 
 from dotenv import load_dotenv
 
+from config import *
+from src.data_loading import load_evidence_from_json
 from src.orchestration import PipelineRunner
 from config import *
 
@@ -89,8 +92,23 @@ def main():
     if not api_key:
         raise SystemExit("API key not provided. Use --api_key or set OPENAI_API_KEY in .env.")
 
-    set_openai_api_key(api_key, folder_id)
-    
+    # Prepare world_contexts from --news-context-path (done outside orchestration)
+    # so that world_contexts.parquet gets populated on save.
+    world_contexts: Dict[str, dict] = {}
+    if args.news_context_path:
+        try:
+            with open(args.news_context_path, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict) and any(isinstance(v, dict) for v in loaded.values()):
+                world_contexts = loaded  # already a {ta_name: ctx} map
+            elif isinstance(loaded, dict):
+                # single context JSON: associate with the first target audience
+                evidence_data = load_evidence_from_json(args.evidence) if not isinstance(args.evidence, list) else args.evidence
+                ta_name = evidence_data[0].get('target_audience_name', 'default') if evidence_data else 'default'
+                world_contexts = {ta_name: loaded}
+        except Exception as e:
+            logging.warning(f"Failed to load news_context from {args.news_context_path}: {e}")
+
     pipeline_config = {
         'evidence': args.evidence,
         'nemo_size': args.nemo_size,
@@ -103,6 +121,7 @@ def main():
         'decision_mode': args.decision_mode,
         'survey_mode': args.survey_mode,
         'news_context_path': args.news_context_path,
+        'world_contexts': world_contexts,
         'use_pgm': args.use_pgm,
         "ocean_flag": args.oceanflag,
         "visualize_sample": args.visualize_sample,

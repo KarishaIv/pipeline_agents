@@ -5,9 +5,7 @@ are not reconstructed when loading from checkpoint.
 """
 
 import json
-from unittest.mock import MagicMock
 
-import pytest
 
 from src.meta_agent.dto import DtoPayload
 from src.meta_agent.utils.state import MetaAgentState

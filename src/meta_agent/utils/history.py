@@ -13,6 +13,7 @@ from src.utils import make_openai_client
 from src.meta_agent.configs import (
     HISTORY_SUMMARY_MAX_TOKENS,
     HISTORY_SUMMARY_MODEL,
+    HISTORY_SUMMARY_TEMPERATURE,
     MAX_HISTORY_CHARS,
     SUMMARY_RECENT_MESSAGES,
 )
@@ -91,7 +92,7 @@ async def _default_history_summarizer(history_text: str, max_tokens: int | None 
             {"role": "system", "content": HISTORY_SUMMARIZER_SYSTEM},
             {"role": "user", "content": history_text},
         ],
-        "temperature": 0.0,
+        "temperature": HISTORY_SUMMARY_TEMPERATURE,
     }
     if max_tokens is not None:
         completion_kwargs["max_tokens"] = max_tokens

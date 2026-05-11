@@ -15,7 +15,6 @@ from src.meta_agent.tools.qdrant_tools import (
     QdrantScrollTool,
     QdrantSearchTool,
     failure_payload,
-    get_qdrant_service,
 )
 
 

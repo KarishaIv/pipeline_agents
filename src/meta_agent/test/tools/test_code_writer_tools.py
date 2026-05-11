@@ -1,6 +1,5 @@
 """Tests for code_writer_tools.py - ValidateCodeTool and ExecuteCodeTool tool wrappers."""
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +30,7 @@ async def test_validate_code_tool_safe_code(mocker):
     safe_code = "values = [1, 2, 3]; print(sum(values) / len(values))"
     safe_tool = ValidateCodeTool(
         reasoning="Validate safe snippet",
-        dto_name="test_dto",
+        dto_names=["test_dto"],
         code=safe_code,
     )
     result_safe = await safe_tool(mock_context, mock_config)
@@ -56,7 +55,7 @@ async def test_validate_code_tool_pandas_import_is_warned(mocker):
     pandas_import_code = "import pandas as pd; df = pd.DataFrame(); print(df.describe())"
     pandas_import_tool = ValidateCodeTool(
         reasoning="Validate legacy pandas import snippet",
-        dto_name="test_dto",
+        dto_names=["test_dto"],
         code=pandas_import_code,
     )
     result_pandas_import = await pandas_import_tool(mock_context, mock_config)
@@ -80,7 +79,7 @@ async def test_validate_code_tool_dangerous_code_is_warned(mocker):
     dangerous_code = "import os; os.system('rm -rf /'); exec('print(1)')"
     dangerous_tool = ValidateCodeTool(
         reasoning="Validate dangerous snippet",
-        dto_name="test_dto",
+        dto_names=["test_dto"],
         code=dangerous_code,
     )
     result_danger = await dangerous_tool(mock_context, mock_config)
@@ -101,7 +100,7 @@ async def test_validate_code_tool_empty_code_returns_error(mocker):
         return_value=(None, {"rows": []}, None),
     )
 
-    tool = ValidateCodeTool(reasoning="Validate empty code", dto_name="test_dto", code="   ")
+    tool = ValidateCodeTool(reasoning="Validate empty code", dto_names=["test_dto"], code="   ")
     result = await tool(mock_context, mock_config)
     payload = json.loads(result)
 
@@ -123,7 +122,7 @@ async def test_validate_code_tool_syntax_error_returns_error(mocker):
 
     tool = ValidateCodeTool(
         reasoning="Validate syntax failure",
-        dto_name="test_dto",
+        dto_names=["test_dto"],
         code="for i in range(3) print(i)",
     )
     result = await tool(mock_context, mock_config)
@@ -165,7 +164,7 @@ async def test_execute_code_tool_with_dto(temp_charts_dir, sample_dto_data, mock
     ):
         tool = ExecuteCodeTool(
             reasoning="Run stats snippet",
-            dto_name="test_dto",
+            dto_names=["test_dto"],
             code="df.describe(); print('Stats computed')",
         )
         mock_context = MagicMock()
@@ -176,7 +175,7 @@ async def test_execute_code_tool_with_dto(temp_charts_dir, sample_dto_data, mock
         data = json.loads(result)
         assert "output" in data
         assert "Stats computed" in data["output"]
-        assert data["dto_name"] == "test_dto"
+        assert data["dto_names"] == ["test_dto"]
 
 
 @pytest.mark.asyncio
@@ -209,11 +208,11 @@ async def test_execute_code_tool_sets_default_output_when_silent(sample_dto_data
         "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
         return_value=mock_executor,
     ):
-        tool = ExecuteCodeTool(reasoning="Silent run", dto_name="test_dto", code="x = 1")
+        tool = ExecuteCodeTool(reasoning="Silent run", dto_names=["test_dto"], code="x = 1")
         result = await tool(MagicMock(), MagicMock())
         payload = json.loads(result)
 
-        assert payload["dto_name"] == "test_dto"
+        assert payload["dto_names"] == ["test_dto"]
         assert payload["output"] == "(нет вывода)"
 
 
@@ -247,11 +246,11 @@ async def test_execute_code_tool_returns_error_output(sample_dto_data, mocker):
         "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
         return_value=mock_executor,
     ):
-        tool = ExecuteCodeTool(reasoning="Failing run", dto_name="test_dto", code="raise ValueError('x')")
+        tool = ExecuteCodeTool(reasoning="Failing run", dto_names=["test_dto"], code="raise ValueError('x')")
         result = await tool(MagicMock(), MagicMock())
         payload = json.loads(result)
 
-        assert payload["dto_name"] == "test_dto"
+        assert payload["dto_names"] == ["test_dto"]
         assert payload["error"] == "ValueError: boom"
 
 
@@ -260,8 +259,8 @@ def test_code_writer_tool_metadata():
     from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool, ValidateCodeTool
 
     tools = [
-        ValidateCodeTool(reasoning="meta", dto_name="dto", code="print(1)"),
-        ExecuteCodeTool(reasoning="meta", dto_name="dto", code="print(1)"),
+        ValidateCodeTool(reasoning="meta", dto_names=["dto"], code="print(1)"),
+        ExecuteCodeTool(reasoning="meta", dto_names=["dto"], code="print(1)"),
     ]
     for tool in tools:
         name = tool.tool_name
@@ -304,10 +303,11 @@ async def test_execute_code_tool_creates_service_with_correct_config(sample_dto_
         "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
         side_effect=track_init,
     ):
-        tool = ExecuteCodeTool(reasoning="test", dto_name="test_dto", code="print('test')")
+        tool = ExecuteCodeTool(reasoning="test", dto_names=["test_dto"], code="print('test')")
         await tool(MagicMock(), MagicMock())
 
         assert len(init_calls) == 1
         config = init_calls[0]
-        assert config.dto_payload == test_payload
+        assert "test_dto" in config.dto_payloads
+        assert config.dto_payloads["test_dto"] == test_payload
         assert config.timeout > 0  # Should have a timeout value

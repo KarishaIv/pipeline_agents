@@ -3,7 +3,7 @@
 BDD-style: these tests are written before implementation and should initially fail (red), then pass after (green).
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

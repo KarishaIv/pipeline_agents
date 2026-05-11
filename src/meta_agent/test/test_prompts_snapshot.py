@@ -3,7 +3,6 @@
 Uses syrupy to ensure prompt strings don't change unexpectedly.
 """
 
-import pytest
 
 from src.meta_agent.prompts import (
     SUPERVISOR_SYSTEM,
@@ -15,7 +14,7 @@ from src.meta_agent.prompts import (
     _ANALYZER_TOOLS_BLOCK,
     _CODE_WRITER_TOOLS_BLOCK,
     _COLLECTION_CATALOG,
-    _CODE_WRITER_DTO_ENV_VAR,
+    _CODE_WRITER_DTOS_ENV_VAR,
 )
 
 
@@ -73,8 +72,8 @@ class TestPromptComponents:
 
     def test_code_writer_env_var_injected(self):
         """Verify DTO environment variable is injected into code writer prompt."""
-        assert _CODE_WRITER_DTO_ENV_VAR == "DTO_DATA_JSON"
-        assert _CODE_WRITER_DTO_ENV_VAR in CODE_WRITER_SYSTEM
+        assert _CODE_WRITER_DTOS_ENV_VAR == "DTOS_DATA_JSON"
+        assert _CODE_WRITER_DTOS_ENV_VAR in CODE_WRITER_SYSTEM
 
     def test_all_prompts_have_minimum_length(self):
         """Ensure all system prompts have substantial content."""

@@ -1,6 +1,5 @@
 """Жизненный цикл агента: создание, выполнение и извлечение результата."""
 
-import json
 import logging
 import os
 
@@ -11,7 +10,7 @@ from sgr_agent_core.base_tool import BaseTool
 import src.meta_agent.lib_patches  # noqa: F401  apply all third-party patches
 
 from config import get_model_uri, YANDEX_BASE_URL
-from src.meta_agent.configs import MAX_AGENT_ITERATIONS
+from src.meta_agent.configs import LLM_TEMPERATURE, MAX_AGENT_ITERATIONS
 from src.meta_agent.utils.json_responses import json_error
 from src.utils import make_openai_client
 
@@ -47,6 +46,7 @@ def make_agent(
     *,
     name: str = "agent",
     model: str | None = None,
+    temperature: float | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> ToolCallingAgent:
     """Создать экземпляр ToolCallingAgent на базе Yandex LLM.
@@ -58,6 +58,7 @@ def make_agent(
     cfg.llm.api_key = api_key
     cfg.llm.base_url = YANDEX_BASE_URL
     cfg.llm.model = get_model_uri(model)
+    cfg.llm.temperature = temperature if temperature is not None else LLM_TEMPERATURE
     cfg.prompts.system_prompt_str = system_prompt
     cfg.execution.max_iterations = MAX_AGENT_ITERATIONS
 
@@ -99,6 +100,7 @@ async def run_agent(
     *,
     name: str,
     model: str | None = None,
+    temperature: float | None = None,
     initial_custom_context: dict[str, Any] | None = None,
 ) -> AgentRunResult:
     """Run an LLM agent with tools and return structured result.
@@ -113,6 +115,7 @@ async def run_agent(
         toolkit,
         name=name,
         model=model,
+        temperature=temperature,
         initial_custom_context=initial_custom_context,
     )
     try:

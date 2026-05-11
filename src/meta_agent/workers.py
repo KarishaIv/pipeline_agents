@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from src.meta_agent.agent_factory import run_agent
-from src.meta_agent.configs.workers import WORKER_DEFINITIONS, WorkerDefinition
+from src.meta_agent.configs import LLM_TEMPERATURE, WORKER_DEFINITIONS, WorkerDefinition
 from src.meta_agent.tools.dto_tools import DTO_STORE_KEY
 from src.meta_agent.utils.json_responses import json_node_failure
 from src.meta_agent.utils.state import state_to_dict
@@ -66,6 +66,9 @@ async def _run_worker(
 
     # Use model_override if specified, else no explicit model (uses default from run_agent)
     effective_model = definition.model_override
+    effective_temperature = (
+        definition.temperature if definition.temperature is not None else LLM_TEMPERATURE
+    )
 
     t0 = time.perf_counter()
     run_result = await run_agent(
@@ -74,6 +77,7 @@ async def _run_worker(
         toolkit=definition.tools,
         name=definition.worker_name,
         model=effective_model,
+        temperature=effective_temperature,
         initial_custom_context={DTO_STORE_KEY: dict(dto_store)},
     )
     elapsed = time.perf_counter() - t0

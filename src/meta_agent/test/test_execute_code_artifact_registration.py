@@ -1,8 +1,7 @@
 """Tests for ExecuteCodeTool artifact registration (regression test for code_writer chart bug)."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from pathlib import Path
+from unittest.mock import MagicMock, AsyncMock
 
 
 @pytest.mark.asyncio
@@ -39,7 +38,7 @@ async def test_execute_code_tool_registers_saved_charts_as_artifacts(sample_dto_
 
     tool = ExecuteCodeTool(
         reasoning="Create visualization",
-        dto_name="test_dto",
+        dto_names=["test_dto"],
         code="import matplotlib.pyplot as plt\nplt.plot([1,2,3])\nsave_chart('output.png')\nprint('Chart saved')"
     )
 
@@ -49,8 +48,5 @@ async def test_execute_code_tool_registers_saved_charts_as_artifacts(sample_dto_
 
     result = await tool(mock_context, mock_config)
 
-    # After execution, context should have registered artifacts if save_chart() was called
-    artifacts = mock_context.custom_context.get("artifacts", [])
-    # The test is checking that the mechanism exists for registering artifacts
-    # In the actual implementation, we'd check the output for file paths and register them
+    # After execution, output should reflect successful run (artifact registration path exercised when files appear in CHARTS_DIR)
     assert "Chart saved" in result or "artifacts" in result or "output" in result.lower()

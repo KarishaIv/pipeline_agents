@@ -3,9 +3,8 @@
 All test logic is contained within src/meta_agent/test/ as specified.
 Tests cover pure functions with parametrized edge cases, reducers, truncation logic.
 """
-import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -247,6 +246,18 @@ def test_build_turn_state_update():
     assert "existing" in update["dto_store"]
     assert len(update["history"]) == 1
     assert update["history"][-1]["content"] == question
+
+
+def test_build_turn_state_update_omits_outputs_and_artifacts():
+    """Turn update must not re-send outputs/artifacts: append_list would duplicate checkpoint lists."""
+    snapshot = {
+        "dto_store": {},
+        "outputs": [{"type": "text", "text": "prior"}],
+        "artifacts": [{"kind": "chart", "filename": "x.png"}],
+    }
+    update = build_turn_state_update("Next question", snapshot)
+    assert "outputs" not in update
+    assert "artifacts" not in update
 
 
 def test_route_supervisor():

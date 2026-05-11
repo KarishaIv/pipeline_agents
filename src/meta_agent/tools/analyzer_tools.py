@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import traceback
-from datetime import datetime
 from typing import List, Literal, TYPE_CHECKING
 
 import pandas as pd
@@ -23,7 +21,7 @@ from pydantic import Field
 from sgr_agent_core.base_tool import BaseTool
 from config import get_model_uri
 from src.utils import make_openai_client
-from src.meta_agent.configs import CHARTS_DIR
+from src.meta_agent.configs import CHARTS_DIR, SUMMARIZE_TEXTS_TEMPERATURE
 from src.meta_agent.tools.dto_tools import dto_summary_view, resolve_dto_or_error
 from src.meta_agent.utils.json_responses import json_error, serialize_tool_result
 from src.meta_agent.output_models import AgentArtifact
@@ -404,7 +402,7 @@ class SummarizeTextsTool(BaseTool):
                 model=get_model_uri(),
                 messages=[{"role": "user", "content": user_message}],
                 max_tokens=self.max_tokens,
-                temperature=0.3,
+                temperature=SUMMARIZE_TEXTS_TEMPERATURE,
             )
             summary = response.choices[0].message.content or ""
             return serialize_tool_result({

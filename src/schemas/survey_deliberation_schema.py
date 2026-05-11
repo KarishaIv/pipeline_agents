@@ -102,7 +102,7 @@ class SurveyPersonaModel(BaseModel):
     consumer_pragmatism: float = Field(..., ge=0.0, le=1.0)
     openness_to_change: float = Field(..., ge=0.0, le=1.0)
     professional_identity_salience: float = Field(..., ge=0.0, le=1.0)
-    summary: List[str] = Field(..., min_items=2, max_items=6)
+    summary: List[str] = Field(..., min_items=1, max_items=6)
 
 
 class SurveyConflictResolution(BaseModel):

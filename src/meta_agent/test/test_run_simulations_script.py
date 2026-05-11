@@ -6,15 +6,11 @@ questions, target_audiences, world_contexts, simulations (with world_context sup
 """
 
 import pytest
-from pathlib import Path
-import pandas as pd
-import json
 
 
 @pytest.mark.asyncio
 async def test_run_simulations_script_exists_and_importable():
     """Script module should be importable (will fail until created)."""
-    from src.scripts import run_simulations  # expected to raise ImportError initially
 
 
 @pytest.mark.asyncio

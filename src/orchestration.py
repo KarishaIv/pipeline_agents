@@ -30,6 +30,7 @@ class PipelineRunner:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.use_pgm = config.get('use_pgm', True)
         self.news_enricher = news_enricher
+        self.pre_world_contexts = config.get('world_contexts') or {}
         
     async def run(self):
         """Запуск полного пайплайна"""
@@ -46,7 +47,7 @@ class PipelineRunner:
         all_personas = await self._generate_or_filter_personas(datasets, pgm_model)
 
         # 3.5 Получение новостного контекста среды (опционально)
-        world_contexts: Dict[str, dict] = {}
+        world_contexts: Dict[str, dict] = self.pre_world_contexts
         if self.news_enricher:
             world_contexts = await self._enrich_with_news_context(datasets['evidence'])
 

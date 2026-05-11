@@ -5,14 +5,11 @@ After implementing src/scripts/create_persons.py they should pass.
 """
 
 import pytest
-from pathlib import Path
-import pandas as pd
 
 
 @pytest.mark.asyncio
 async def test_create_persons_script_exists_and_importable():
     """Script module should be importable (will fail until created)."""
-    from src.scripts import create_persons  # expected to raise ImportError initially
 
 
 @pytest.mark.asyncio

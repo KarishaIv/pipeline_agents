@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, NamedTuple
 
 import aiosqlite
+
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -34,6 +35,7 @@ from src.meta_agent.utils.thread_ids import generate_thread_id
 
 logger = logging.getLogger("meta_agent")
 DTO_PAYLOAD_MSGPACK_MODULE = ("src.meta_agent.dto", "DtoPayload")
+AGENT_ARTIFACT_MSGPACK_MODULE = ("src.meta_agent.output_models", "AgentArtifact")
 
 
 class MetaAgentResult(NamedTuple):
@@ -64,7 +66,10 @@ class MetaAgentGraphManager:
     @asynccontextmanager
     async def _open_checkpointer(self) -> AsyncIterator[AsyncSqliteSaver]:
         serde = JsonPlusSerializer(
-            allowed_msgpack_modules=[DTO_PAYLOAD_MSGPACK_MODULE]
+            allowed_msgpack_modules=[
+                DTO_PAYLOAD_MSGPACK_MODULE,
+                AGENT_ARTIFACT_MSGPACK_MODULE,
+            ]
         )
         async with aiosqlite.connect(str(self._checkpoint_db_path)) as conn:
             yield AsyncSqliteSaver(conn, serde=serde)
@@ -170,7 +175,7 @@ class MetaAgentGraphManager:
         Преобразует artifacts (charts) в ImageOutput объекты.
         Возвращает список outputs.
         """
-        from src.meta_agent.api_models import TextOutput, ImageOutput
+        from src.meta_agent.api_models import ImageOutput, JsonOutput, FileOutput
 
         graph = await self.get_graph()
         result_dict = result.model_dump() if hasattr(result, "model_dump") else result
@@ -178,7 +183,7 @@ class MetaAgentGraphManager:
         # Extract outputs from final state
         outputs = list(result_dict.get("outputs", []))
 
-        # Convert artifacts to outputs (especially chart artifacts to ImageOutput)
+        # Convert artifacts to outputs (charts → ImageOutput, JSON → JsonOutput, CSV/files → FileOutput)
         artifacts = result_dict.get("artifacts", [])
         for artifact in artifacts:
             # Get artifact attributes (handle both dict and Pydantic model)
@@ -188,8 +193,8 @@ class MetaAgentGraphManager:
             mime_type = artifact_dict.get("mime_type", "application/octet-stream")
             caption = artifact_dict.get("caption")
             metadata = artifact_dict.get("metadata", {})
+            file_path = artifact_dict.get("path", "")
 
-            # Convert chart artifacts to ImageOutput with filename-based artifact URL
             if artifact_kind == "chart" and filename:
                 url = f"/artifacts/{filename}"
                 image_output = ImageOutput(
@@ -199,6 +204,37 @@ class MetaAgentGraphManager:
                     mime_type=mime_type,
                 )
                 outputs.append(image_output)
+            elif artifact_kind == "data" and filename:
+                # JSON raw data artifact: load content into JsonOutput when possible
+                try:
+                    import json
+                    with open(file_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    json_output = JsonOutput(
+                        data=data,
+                        caption=caption or filename,
+                    )
+                    outputs.append(json_output)
+                except Exception as e:
+                    logger.warning("Failed to load JSON artifact %s: %s", filename, e)
+                    # Fallback: expose as downloadable file
+                    download_url = f"/artifacts/{filename}"
+                    file_output = FileOutput(
+                        filename=filename,
+                        mime_type=mime_type or "application/json",
+                        download_url=download_url,
+                        caption=caption,
+                    )
+                    outputs.append(file_output)
+            elif artifact_kind in ("csv", "file", "pdf") and filename:
+                download_url = f"/artifacts/{filename}"
+                file_output = FileOutput(
+                    filename=filename,
+                    mime_type=mime_type,
+                    download_url=download_url,
+                    caption=caption,
+                )
+                outputs.append(file_output)
 
         summarized_history = await build_persisted_history(result_dict)
 

@@ -49,7 +49,7 @@ class QdrantService:
         collection: CollectionName,
         query: str,
         vector_name: str = "embedding",
-        limit: int = 5,
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """Поиск по векторному сходству."""
         vector = get_embedding(query)
@@ -66,7 +66,7 @@ class QdrantService:
         collection: CollectionName,
         field: str,
         value: str,
-        limit: int = 10,
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """Фильтрация по полю payload."""
         results, _ = self.client.scroll(
@@ -86,7 +86,7 @@ class QdrantService:
     def scroll_points(
         self,
         collection: CollectionName,
-        limit: int = 10,
+        limit: int = 1000,
         offset: Optional[str] = None,
         payload_fields: Optional[List[str]] = None,
         filter_field: Optional[str] = None,
@@ -134,8 +134,24 @@ class QdrantService:
     def get_collection_schema(self, collection: CollectionName) -> Dict[str, Any]:
         """Получение схемы коллекции (поля payload и вектора)."""
         info = self.client.get_collection(collection)
+        raw_schema = dict(getattr(info, "payload_schema", {}) or {})
+        payload_schema = {}
+        for k, v in raw_schema.items():
+            payload_schema[k] = {
+                "data_type": v.data_type,
+                "points": v.points,
+            }
+
+        # Include index column (point ID) as a synthetic schema entry
+        points_count = getattr(info, "points_count", 0)
+        payload_schema["UUID"] = {"data_type": "keyword", "points": points_count}
+
+        vectors = list(info.config.params.vectors.keys()) if info.config.params.vectors else []
+
         return {
             "collection": collection,
-            "payload_schema": getattr(info, "payload_schema", {}),
-            "vectors": getattr(info, "vectors", {}),
+            "status": getattr(info, "status", None),
+            "points_count": points_count,
+            "payload_schema": payload_schema,
+            "vectors": vectors,
         }

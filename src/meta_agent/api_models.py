@@ -3,7 +3,7 @@
 Модуль переэкспортирует output-модели и задаёт контракт эндпоинта POST /ask.
 """
 
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 # Import and re-export output models

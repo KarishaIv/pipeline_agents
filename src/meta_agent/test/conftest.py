@@ -2,16 +2,14 @@
 
 All tests are contained within src/meta_agent/test/ per the requirements.
 """
-import json
 import sqlite3
 import gc
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from src.meta_agent.configs import AVAILABLE_COLLECTIONS, COLLECTION_DESCRIPTIONS
+from src.meta_agent.configs import AVAILABLE_COLLECTIONS
 from src.meta_agent.utils.state import MetaAgentState
 
 

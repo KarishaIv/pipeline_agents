@@ -1,7 +1,7 @@
 """Tests for ChartService - chart saving, filename sanitization, and security."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import matplotlib.pyplot as plt
 import pytest

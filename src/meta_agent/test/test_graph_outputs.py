@@ -1,6 +1,6 @@
 """Tests for graph and API output handling (should fail before implementation)."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 
 def test_meta_agent_result_structure():
@@ -25,7 +25,7 @@ async def test_ask_endpoint_returns_outputs_not_wrapped_answer(mocker):
     from src.scripts.serve_meta_agent import app
     from fastapi.testclient import TestClient
 
-    client = TestClient(app)
+    TestClient(app)
 
     # Mock the graph manager to return outputs
     mock_result = MagicMock()
@@ -40,9 +40,8 @@ async def test_ask_endpoint_returns_outputs_not_wrapped_answer(mocker):
 async def test_graph_invoke_returns_outputs():
     """Graph invoke should populate MetaAgentState.outputs, not just answer."""
     from src.meta_agent.graph import MetaAgentGraphManager
-    from src.meta_agent.utils.state import MetaAgentState
 
-    manager = MetaAgentGraphManager()
+    MetaAgentGraphManager()
 
     # After implementation, invoking the graph should produce outputs in state
     # This is a contract test for the new behavior

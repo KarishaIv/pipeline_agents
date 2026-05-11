@@ -5,7 +5,6 @@ error handling, structured payloads, and improved error clarity.
 """
 
 import json
-import traceback
 from typing import Any
 
 

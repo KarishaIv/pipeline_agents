@@ -1,6 +1,4 @@
 """Tests for output models and AgentArtifact contract (these should fail before implementation)."""
-import pytest
-from uuid import uuid4
 
 
 def test_image_output_exists():

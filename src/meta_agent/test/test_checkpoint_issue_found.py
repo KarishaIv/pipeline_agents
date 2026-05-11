@@ -46,7 +46,7 @@ def test_merge_dto_store_loses_type_information():
     # Merge is called
     merged = merge_dto_store(left_store, right_store)
 
-    print(f"\nAfter merge_dto_store (with fix):")
+    print("\nAfter merge_dto_store (with fix):")
     for name, value in merged.items():
         print(f"  {name}: type={type(value).__name__}, is_dict={isinstance(value, dict)}, is_DtoPayload={isinstance(value, DtoPayload)}")
 
@@ -89,12 +89,12 @@ def test_issue_happens_during_graph_invoke():
 
     # Step 2: Validate with MetaAgentState
     state = MetaAgentState.model_validate(checkpoint_state)
-    print(f"\n2. After model_validate:")
+    print("\n2. After model_validate:")
     print(f"   state.dto_store['personas_1']: {type(state.dto_store['personas_1'])}")
 
     # Step 3: model_dump for nodes
     state_dict = state.model_dump()
-    print(f"\n3. After model_dump (send to nodes):")
+    print("\n3. After model_dump (send to nodes):")
     print(f"   state_dict['dto_store']['personas_1']: {type(state_dict['dto_store']['personas_1'])}")
 
     # Step 4: Node processes and returns update
@@ -118,28 +118,28 @@ def test_issue_happens_during_graph_invoke():
             }
         }
     }
-    print(f"\n4. Node returns update with dicts:")
+    print("\n4. Node returns update with dicts:")
     for name, value in node_update["dto_store"].items():
         print(f"   {name}: {type(value)}")
 
     # Step 5: LangGraph calls the reducer (NOW WITH FIX)
     merged = merge_dto_store(state.dto_store, node_update["dto_store"])
-    print(f"\n5. After merge_dto_store (WITH FIX):")
+    print("\n5. After merge_dto_store (WITH FIX):")
     for name, value in merged.items():
         print(f"   {name}: {type(value)}")
 
     # Step 6: Try to get one of the merged DTOs
     personas = merged["personas_1"]
-    print(f"\n6. Trying to call .get_summary() on personas_1:")
+    print("\n6. Trying to call .get_summary() on personas_1:")
     print(f"   Type: {type(personas)}")
     if isinstance(personas, dict):
-        print(f"   ERROR: It's still a dict! This shouldn't happen now.")
+        print("   ERROR: It's still a dict! This shouldn't happen now.")
         try:
             personas.get_summary("personas_1", 50)
         except AttributeError as e:
             print(f"   ❌ AttributeError: {e}")
     else:
-        print(f"   ✓ OK: It's a DtoPayload")
+        print("   ✓ OK: It's a DtoPayload")
         summary = personas.get_summary("personas_1", 50)
         print(f"   ✓ Successfully called .get_summary(): {summary.dto_name}")
 

@@ -1,8 +1,6 @@
 """Tests for CodeExecutionService - subprocess execution, timeout handling, and sandbox isolation."""
 
-import asyncio
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -47,7 +45,7 @@ def test_code_execution_config_defaults():
 
     assert config.timeout == 30
     assert config.max_stdout == 102400
-    assert config.dto_payload is None
+    assert config.dto_payloads is None
     assert config.charts_dir is None
     assert config.sandbox_globals is None
 
@@ -158,12 +156,12 @@ async def test_execute_code_with_pandas():
 
 @pytest.mark.asyncio
 async def test_execute_code_with_dto(sample_dto):
-    """Test execute_async injects DTO into sandbox."""
-    config = CodeExecutionConfig(dto_payload=sample_dto)
+    """Test execute_async injects DTOs into sandbox."""
+    config = CodeExecutionConfig(dto_payloads={"test": sample_dto})
     service = CodeExecutionService(config)
 
     result = await service.execute_async(
-        "print(len(df)); print(df['x'].sum())"
+        "print(len(dfs['test'])); print(dfs['test']['x'].sum())"
     )
 
     assert result.exit_code == 0
@@ -173,11 +171,11 @@ async def test_execute_code_with_dto(sample_dto):
 
 @pytest.mark.asyncio
 async def test_execute_code_dto_in_namespace(sample_dto):
-    """Test execute_async provides dto dict in namespace."""
-    config = CodeExecutionConfig(dto_payload=sample_dto)
+    """Test execute_async provides dtos dict in namespace."""
+    config = CodeExecutionConfig(dto_payloads={"test": sample_dto})
     service = CodeExecutionService(config)
 
-    result = await service.execute_async("print(dto['summary_text'])")
+    result = await service.execute_async("print(dtos['test']['summary_text'])")
 
     assert result.exit_code == 0
     assert "Test data" in result.stdout
@@ -186,7 +184,7 @@ async def test_execute_code_dto_in_namespace(sample_dto):
 @pytest.mark.asyncio
 async def test_execute_code_silent(sample_dto):
     """Test execute_async with code that produces no output."""
-    config = CodeExecutionConfig(dto_payload=sample_dto)
+    config = CodeExecutionConfig(dto_payloads={"test": sample_dto})
     service = CodeExecutionService(config)
 
     result = await service.execute_async("x = 1 + 1")
@@ -290,7 +288,7 @@ async def test_execute_code_dto_serialization_error():
 
     # Mock model_dump to raise error (at class level to avoid Pydantic validation issues)
     with patch.object(DtoPayload, "model_dump", side_effect=ValueError("Serialization error")):
-        config = CodeExecutionConfig(dto_payload=dto)
+        config = CodeExecutionConfig(dto_payloads={"bad": dto})
         service = CodeExecutionService(config)
 
         result = await service.execute_async("print('test')")

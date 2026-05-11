@@ -17,7 +17,7 @@ async def test_telegram_bot_client_has_send_photo():
 async def test_telegram_send_photo_method_exists():
     """send_photo should accept chat_id, url, and caption."""
     from src.meta_agent.telegram.bot_client import TelegramBotClient
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     client = TelegramBotClient("test-token")
 

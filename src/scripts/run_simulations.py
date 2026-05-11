@@ -64,13 +64,37 @@ async def run_simulations_from_parquet(
     output_dir.mkdir(parents=True, exist_ok=True)
     data_4_qdrant = output_dir  # save parquets here for simplicity (matches test expectation)
 
-    # Load personas
-    personas_df = pd.read_parquet(personas_parquet)
-    personas = [personas_df.iloc[i].to_dict() for i in range(len(personas_df))]
-    logger.info(f"Loaded {len(personas)} personas from {personas_parquet}")
-
-    # Load evidence + questions
+    # Load evidence first (for synthetic_size + TA name filtering)
     evidence = load_evidence_from_json(str(evidence_path))
+
+    # Load personas (drop embedding), then filter by target_audience_name + per-TA synthetic_size
+    personas_df = pd.read_parquet(personas_parquet)
+    if "embedding" in personas_df.columns:
+        personas_df = personas_df.drop(columns=["embedding"])
+
+    if evidence and "target_audience_name" in personas_df.columns:
+        filtered_parts = []
+        for item in evidence:
+            ta_name = item.get("target_audience_name")
+            size = item.get("synthetic_size", 0)
+            if ta_name and size > 0:
+                ta_df = personas_df[personas_df["target_audience_name"] == ta_name].head(size)
+                if not ta_df.empty:
+                    filtered_parts.append(ta_df)
+        if filtered_parts:
+            personas_df = pd.concat(filtered_parts, ignore_index=True)
+        else:
+            # fallback
+            total = sum(item.get("synthetic_size", 0) for item in evidence)
+            if total > 0:
+                personas_df = personas_df.head(total)
+    else:
+        total = sum(item.get("synthetic_size", 0) for item in evidence)
+        if total > 0:
+            personas_df = personas_df.head(total)
+
+    personas = [personas_df.iloc[i].to_dict() for i in range(len(personas_df))]
+    logger.info(f"Loaded {len(personas)} personas from {personas_parquet} (filtered by evidence TA names + sizes)")
     if survey_questions is None:
         try:
             survey_questions = load_survey_data() or ["Default question for test?"]
@@ -85,6 +109,11 @@ async def run_simulations_from_parquet(
             loaded = json.load(f)
             if isinstance(loaded, dict) and any(isinstance(v, dict) for v in loaded.values()):
                 world_contexts = loaded  # ta_name -> ctx
+            elif isinstance(loaded, dict):
+                # single context JSON: associate with the first target audience (so world_contexts.parquet gets a row)
+                ta_name = evidence[0].get('target_audience_name', 'default') if evidence else 'default'
+                world_contexts = {ta_name: loaded}
+                news_context = loaded  # preserve uniform application to all personas
             else:
                 news_context = loaded  # fallback single context
     # (enricher path omitted for minimal impl; can be added)
@@ -152,7 +181,7 @@ def parse_args():
     parser.add_argument('--simulation-steps', type=int, default=1)
     parser.add_argument('--concurrency', type=int, default=4)
     parser.add_argument('--timeout', type=float, default=60.0)
-    parser.add_argument('--survey-questions', type=str, default=None, help='Comma-separated questions or JSON list')
+    parser.add_argument('--survey-questions-path', type=str, default='./data/survey_questions.json', help='Path to survey questions JSON file (with "questions" array)')
     parser.add_argument('--api_key', type=str, default=os.getenv('YANDEX_API_KEY'))
     parser.add_argument('--folder_id', type=str, default=os.getenv('YANDEX_FOLDER_ID'))
     return parser.parse_args()
@@ -160,11 +189,13 @@ def parse_args():
 
 async def main_async(args):
     survey_qs = None
-    if args.survey_questions:
-        if args.survey_questions.startswith('['):
-            survey_qs = json.loads(args.survey_questions)
-        else:
-            survey_qs = [q.strip() for q in args.survey_questions.split(',')]
+    if args.survey_questions_path:
+        try:
+            with open(args.survey_questions_path, 'r', encoding='utf-8') as f:
+                survey_data = json.load(f)
+                survey_qs = survey_data.get('questions', []) if isinstance(survey_data, dict) else None
+        except Exception:
+            survey_qs = None
 
     await run_simulations_from_parquet(
         personas_parquet=Path(args.personas_parquet),

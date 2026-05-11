@@ -54,6 +54,7 @@ class WorkerDefinition:
         format_content: Optional function to format parsed report into history content.
                        If None, uses raw output.
         model_override: Optional model override (e.g., BIG_MODEL for code_writer)
+        temperature: Optional temperature for this worker (falls back to LLM_TEMPERATURE)
     """
     worker_name: str
     tools: list
@@ -62,6 +63,7 @@ class WorkerDefinition:
     fallback_on_parse_error: bool = True
     format_content: Callable[[Any], str] | None = field(default=None)
     model_override: str | None = field(default=None)
+    temperature: float | None = field(default=None)
 
 
 WORKER_DEFINITIONS: dict[WorkerName, WorkerDefinition] = {
