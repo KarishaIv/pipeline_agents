@@ -55,48 +55,6 @@ class StorageManager:
             await StorageManager.save_json_async(batch, filename)
             logger.info(f"Saved batch {i // per_file + 1} ({len(batch)} items) -> {filename}")
 
-    @staticmethod
-    async def append_parquet_async(data: list[Dict] | DataFrame, path: Path, check_columns: bool = True) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, StorageManager._append_parquet_sync, data, path, check_columns)
-        logger.debug(f"Saved Parquet -> {path}")
-
-    @staticmethod
-    def _append_parquet_sync(new_data: list[Dict] | DataFrame, path: Path, check_columns: bool = True):
-        # Приведение к DataFrame
-        if not new_data:
-            return
-        if isinstance(new_data, list):
-            if not isinstance(new_data[0], dict):
-                raise TypeError(f"Expected list[dict], got list[{type(new_data[0]).__name__}]")
-            new_data = pd.DataFrame(new_data)
-        elif not isinstance(new_data, pd.DataFrame):
-            raise TypeError(f"Expected list[dict] or DataFrame, got {type(new_data).__name__}")
-
-        # Слияние данных
-        if path.exists():
-            existing_data = pd.read_parquet(path)
-
-            if check_columns:
-                missing = set(existing_data.columns) ^ set(new_data.columns)
-                assert not missing, (
-                    f"Column mismatch: existing={sorted(existing_data.columns)}, "
-                    f"new={sorted(new_data.columns)}, diff={sorted(missing)}"
-                )
-            new_data = pd.concat([existing_data, new_data])
-
-        # Deduplicate by UUID, keeping the last occurrence (most recent write wins)
-        if "UUID" in new_data.columns:
-            before = len(new_data)
-            new_data = new_data.drop_duplicates(subset=["UUID"], keep="last")
-            dropped = before - len(new_data)
-            if dropped:
-                logger.debug("Dropped %d duplicate UUID(s) in %s", dropped, path)
-
-        # Сохранение данных
-        new_data.to_parquet(path, index=False)
-
     async def save_result_stream(result: Dict, out_dir: Path, run_id: str):
         run_dir = out_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)

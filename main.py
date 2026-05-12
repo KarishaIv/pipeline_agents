@@ -14,7 +14,7 @@ load_dotenv(override=True)
 from config import *
 from src.data_loading import load_evidence_from_json
 from src.orchestration import PipelineRunner
-from config import *
+from src.core.simulation_manager import split_news_context_file_payload
 
 def setup_logging():
     """Настройка логирования"""
@@ -93,20 +93,15 @@ def main():
     if not api_key:
         raise SystemExit("API key not provided. Use --api_key or set YANDEX_API_KEY in .env.")
 
-    # Prepare world_contexts from --news-context-path (done outside orchestration)
+    # Prepare world_contexts from --news-context-path using shared helper
     # so that world_contexts.parquet gets populated on save.
     world_contexts: Dict[str, dict] = {}
     if args.news_context_path:
         try:
             with open(args.news_context_path, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
-            if isinstance(loaded, dict) and any(isinstance(v, dict) for v in loaded.values()):
-                world_contexts = loaded  # already a {ta_name: ctx} map
-            elif isinstance(loaded, dict):
-                # single context JSON: associate with the first target audience
-                evidence_data = load_evidence_from_json(args.evidence) if not isinstance(args.evidence, list) else args.evidence
-                ta_name = evidence_data[0].get('target_audience_name', 'default') if evidence_data else 'default'
-                world_contexts = {ta_name: loaded}
+            evidence_data = load_evidence_from_json(args.evidence) if not isinstance(args.evidence, list) else args.evidence
+            world_contexts, _ = split_news_context_file_payload(loaded, evidence_data)
         except Exception as e:
             logging.warning(f"Failed to load news_context from {args.news_context_path}: {e}")
 

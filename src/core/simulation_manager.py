@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Optional
+from typing import Iterable, List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
@@ -17,6 +17,36 @@ from src.core.visualization import EmotionalVisualizer
 from config import *
 
 logger = logging.getLogger(__name__)
+
+
+def split_news_context_file_payload(
+    payload: Any, evidence: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    Split a news context payload (single snapshot or {ta_name: snapshot} map)
+    into a world_contexts dict (TA -> context) and a default fallback news_context.
+    Used by callers to normalize --news-context-path input consistently.
+    """
+    world_contexts: Dict[str, Dict[str, Any]] = {}
+    default_news_context: Optional[Dict[str, Any]] = None
+
+    if payload is None:
+        return world_contexts, default_news_context
+
+    if isinstance(payload, dict) and any(isinstance(v, dict) for v in payload.values()):
+        world_contexts = payload  # already TA map
+    elif isinstance(payload, dict):
+        # single context JSON: associate with first TA if evidence provided
+        ta_name = "default"
+        if evidence and len(evidence) > 0:
+            ta_name = evidence[0].get("target_audience_name", "default") or "default"
+        world_contexts = {ta_name: payload}
+        default_news_context = payload
+    else:
+        # fallback raw value
+        default_news_context = payload
+
+    return world_contexts, default_news_context
 
 
 def _json_safe_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -49,6 +79,7 @@ class SimulationManager:
                  decision_mode: str = "direct",
                  survey_mode: str = "legacy",
                  news_context: Optional[Dict[str, Any]] = None,
+                 world_contexts: Optional[Dict[str, Dict[str, Any]]] = None,
                  survey_questions: List[str] = None,
                  visualize_sample: int = 0,
                  summary_visualize: bool = True):
@@ -64,9 +95,17 @@ class SimulationManager:
         self.decision_mode = decision_mode
         self.survey_mode = survey_mode
         self.news_context = news_context
+        self.world_contexts = world_contexts or {}
         self.survey_questions = survey_questions or []
         self.visualize_sample = max(0, int(visualize_sample))
         self.summary_visualize = bool(summary_visualize)
+
+    def _select_context_for_profile(self, profile: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Return the context actually used for this persona: prefer per-TA world_contexts, fallback to news_context."""
+        ta_name = profile.get("target_audience_name", "") or profile.get("target_audience", "")
+        if ta_name and ta_name in self.world_contexts:
+            return self.world_contexts[ta_name]
+        return self.news_context
 
     async def _run_single(self, profile: Dict[str, Any], steps: int, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -77,23 +116,30 @@ class SimulationManager:
         
         for attempt in range(1, self.run_retries + 2):
             try:
+                selected_context = self._select_context_for_profile(profile)
                 if self.agent_mode == "survey":
                     logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
                     if self.survey_mode == "structured":
                         reasoner = StructuredSurveyReasoner(
                             profile,
-                            world_context=self.news_context,
+                            world_context=selected_context,
                         )
                     else:
-                        reasoner = MultiAgentReasoner(profile)
+                        # legacy: inject for PersonaAgent._extract_news_context
+                        profile_for_run = dict(profile)
+                        if selected_context:
+                            profile_for_run["news_context"] = selected_context
+                        reasoner = MultiAgentReasoner(profile_for_run)
                     survey_results = await reasoner.answer_survey_questions(self.survey_questions)
+                    # attach the actual context used so storage can link it
                     return {
                         "profile": profile,
                         "survey_responses": survey_results, 
                         "mode": "survey",
                         "survey_mode": self.survey_mode,
                         "total_questions": len(self.survey_questions),
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "world_context": selected_context,
                     }
                 else:
                     logger.debug(f"[Persona:{persona_name}] Запуск кредитного режима, шагов: {steps}")
@@ -101,10 +147,14 @@ class SimulationManager:
                         profile,
                         steps=steps,
                         decision_mode=self.decision_mode,
-                        news_context=self.news_context,
+                        news_context=selected_context,
                     )
                     coro = mas.run_simulation()
                     result = await asyncio.wait_for(coro, timeout=self.timeout)
+                    # ensure the used context is present for downstream storage
+                    if selected_context and not result.get("news_context"):
+                        result = dict(result)
+                        result["news_context"] = selected_context
                     return result
             except Exception as e:
                 logger.warning(f"[Persona:{persona_name}] Сбой симуляции, попытка {attempt}: {e}")

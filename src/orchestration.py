@@ -12,7 +12,7 @@ from src.data_loading import load_synthetic_data, load_american_data, preprocess
 from src.pgm_model import create_pgm_model, train_pgm_model, generate_synthetic_data
 from src.utils import normalize_features, normalize_evidence, filter_real_russian_data, translate_ocean_to_readable, get_income_range, get_uuid, get_embedding, get_clear_personas
 from src.clustering import replicate_personas_with_gmm
-from src.core.simulation_manager import SimulationManager
+from src.core.simulation_manager import SimulationManager, split_news_context_file_payload
 from src.core.storage import StorageManager
 from src.news_enricher import NewsContextEnricher
 
@@ -46,8 +46,8 @@ class PipelineRunner:
         # 3. Генерация/фильтрация персон для всех целевых аудиторий
         all_personas = await self._generate_or_filter_personas(datasets, pgm_model)
 
-        # 3.5 Получение новостного контекста среды (опционально)
-        world_contexts: Dict[str, dict] = self.pre_world_contexts
+        # 3.5 Мировой / новостной контекст: конфиг по ЦА + enricher + JSON по пути (TA-карта или один snapshot)
+        world_contexts: Dict[str, dict] = dict(self.pre_world_contexts or {})
         if self.news_enricher:
             world_contexts = await self._enrich_with_news_context(datasets['evidence'])
 
@@ -180,11 +180,19 @@ class PipelineRunner:
         logger.info("🤖 Running multi-agent simulations...")
 
         personas = [all_personas.iloc[i].to_dict() for i in range(len(all_personas))]
-        news_context = None
+        # Use shared helper to normalize path or fall back to passed world_contexts
         news_context_path = self.config.get('news_context_path')
+        news_context = None
+        wc_from_path: Dict[str, dict] = {}
         if news_context_path:
-            with open(news_context_path, 'r', encoding='utf-8') as f:
-                news_context = json.load(f)
+            try:
+                with open(news_context_path, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                wc_from_path, news_context = split_news_context_file_payload(loaded, datasets.get('evidence'))
+            except Exception as e:
+                logger.warning(f"Failed to load news_context from {news_context_path}: {e}")
+        effective_world_contexts = wc_from_path or (world_contexts or {})
+        effective_news_context = news_context or None
 
         manager = SimulationManager(
             out_dir=self.output_dir,
@@ -194,7 +202,8 @@ class PipelineRunner:
             agent_mode=self.config['agent_mode'],
             decision_mode=self.config.get('decision_mode', 'direct'),
             survey_mode=self.config.get('survey_mode', 'legacy'),
-            news_context=news_context,
+            news_context=effective_news_context,
+            world_contexts=effective_world_contexts,
             survey_questions=datasets.get('survey_questions', []),
             visualize_sample=self.config.get('visualize_sample', 0),
             summary_visualize=self.config.get('summary_visualize', True)

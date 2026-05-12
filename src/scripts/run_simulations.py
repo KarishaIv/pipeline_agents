@@ -29,7 +29,7 @@ from src.orchestration import (
     _build_simulation_row,
 )
 from src.core.storage import StorageManager
-from src.core.simulation_manager import SimulationManager
+from src.core.simulation_manager import SimulationManager, split_news_context_file_payload
 from src.data_loading import load_evidence_from_json, load_survey_data
 from config import set_yandex_credentials
 
@@ -101,21 +101,13 @@ async def run_simulations_from_parquet(
         except Exception:
             survey_questions = ["Default question for test?"]
 
-    # Load or enrich world_contexts
+    # Load or enrich world_contexts using shared helper
     world_contexts: Dict[str, dict] = {}
     news_context = None
     if news_context_path and news_context_path.exists():
         with open(news_context_path, 'r', encoding='utf-8') as f:
             loaded = json.load(f)
-            if isinstance(loaded, dict) and any(isinstance(v, dict) for v in loaded.values()):
-                world_contexts = loaded  # ta_name -> ctx
-            elif isinstance(loaded, dict):
-                # single context JSON: associate with the first target audience (so world_contexts.parquet gets a row)
-                ta_name = evidence[0].get('target_audience_name', 'default') if evidence else 'default'
-                world_contexts = {ta_name: loaded}
-                news_context = loaded  # preserve uniform application to all personas
-            else:
-                news_context = loaded  # fallback single context
+            world_contexts, news_context = split_news_context_file_payload(loaded, evidence)
     # (enricher path omitted for minimal impl; can be added)
 
     # Run simulations
