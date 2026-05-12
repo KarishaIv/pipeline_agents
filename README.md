@@ -1,4 +1,4 @@
-# Survey Pipeline with Multi-Agent Simulation
+# Survey Pipeline with Structured Reasoning
 
 Репозиторий для генерации синтетических персон и запуска мультиагентных симуляций в двух режимах:
 - `credit mode (кредитный режим)` для моделирования реакции на кредитное предложение;
@@ -202,38 +202,45 @@ python main.py \
 - **storage.py**: Асинхронное сохранение JSON
 - **visualization.py**: Графики динамики эмоций (matplotlib)
 
----
-
-## 🔬 Технические детали
-
-### PGM (Probabilistic Graphical Model)
-
-**Библиотека**: pgmpy  
-**Тип модели**: Discrete Bayesian Network  
-**Обучение**: Maximum Likelihood Estimation  
-**Inference**: Likelihood-weighted sampling
-
-**Граф зависимостей**:
-```
-age_group → marital_status, children_group, education, income_level
-education → occupation, income_level
-marital_status → children_group
-region_type → income_level
-occupation → income_level
-gender → marital_status, income_level
+```bash
+source .venv312/bin/activate
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_run
 ```
 
-### k-NN Matching
+Пример с новостным контекстом:
 
-**Библиотека**: scipy.spatial.distance  
-**Метрика**: Euclidean distance (после нормализации)  
-**Процесс**:
-1. Category filtering (categorical exact match)
-2. Distance computation (continuous features)
-3. Top-k selection
-4. OCEAN aggregation (mean + std)
+```bash
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --news-context-path data/news_context/context_mothers_35_39_20260426.json \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_news_run
+```
 
-### LLM Integration
+Главные выходы `survey benchmark (survey-бенчмарка)`:
+- `metrics.json`
+- `predictions.csv`
+- `judge_results.csv`
+- `manifest.json`
 
 **Модель**: Yandex GPT   
 **Режим**: Structured outputs (JSON mode)  

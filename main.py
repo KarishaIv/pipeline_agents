@@ -29,6 +29,7 @@ def setup_logging():
     for noisy in ("httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
+
 def parse_arguments():
     """Парсинг аргументов командной строки"""
     # Load .env if present so defaults can be pulled from env vars
@@ -37,7 +38,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description='Survey Pipeline with Multi-Agent Simulation'
     )
-    
+
     parser.add_argument('--evidence', type=str, default='./data/evidence.json',
                         help='Path to JSON file with evidence data')
     parser.add_argument('--api_key', type=str, default=os.getenv("YANDEX_API_KEY"),
@@ -56,13 +57,13 @@ def parse_arguments():
                         help='Timeout per persona simulation (seconds)')
     parser.add_argument('--ta_concurrency', type=int, default=1,
                         help='Number of parallel target audience processing')
-    parser.add_argument('--agent_mode', type=str, default='credit', 
+    parser.add_argument('--agent_mode', type=str, default='survey', 
                         choices=['credit', 'survey'],
                         help="Agent simulation mode")
     parser.add_argument('--decision-mode', type=str, default='direct',
                         choices=['direct', 'compact_debate'],
                         help='Decision mode for credit agent reasoning')
-    parser.add_argument('--survey-mode', type=str, default='legacy',
+    parser.add_argument('--survey-mode', type=str, default='structured',
                         choices=['legacy', 'structured'],
                         help='Survey reasoning mode inside agent_mode=survey')
     parser.add_argument('--news-context-path', type=str, default=None,
@@ -75,18 +76,19 @@ def parse_arguments():
     parser.add_argument('--use_pgm', action='store_true',  default=True,
                         help='Use PGM for synthetic data generation (default: True)')
     parser.add_argument('--no-pgm', action='store_false', dest='use_pgm',
-                        help='Skip PGM, use real Russian data filtered by evidence')
-    parser.add_argument("--oceanflag", action="store_true",
-                        help="Enable OCEAN calculation (default: enabled if flag is present)")
-    parser.add_argument("--no-oceanflag", dest="oceanflag", action="store_false", help="Disable OCEAN calculation")
+                        help='Skip PGM and use filtered data path')
+    parser.add_argument('--oceanflag', action='store_true',
+                        help='Enable OCEAN calculation (default: enabled if flag is present)')
+    parser.add_argument('--no-oceanflag', dest='oceanflag', action='store_false',
+                        help='Disable OCEAN calculation')
     parser.set_defaults(oceanflag=True)
-    
+
     return parser.parse_args()
+
 
 def main():
     """Основная функция запуска пайплайна"""
     args = parse_arguments()
-    
     setup_logging()
     api_key = args.api_key or os.getenv("YANDEX_API_KEY")
     folder_id = args.folder_id or os.getenv("YANDEX_FOLDER_ID")
@@ -123,7 +125,7 @@ def main():
         "visualize_sample": args.visualize_sample,
         "summary_visualize": args.summary_visualize,
     }
-    
+
     runner = PipelineRunner(pipeline_config)
     asyncio.run(runner.run())
 

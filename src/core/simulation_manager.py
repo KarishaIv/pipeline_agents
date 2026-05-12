@@ -6,6 +6,7 @@ from typing import Iterable, List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import numpy as np
 try:
     from src.agents.multi_agent import MultiAgentSystem
 except ImportError:
@@ -73,6 +74,7 @@ class SimulationManager:
                  out_dir: Path = Path("outputs"),
                  concurrency: int = 4,
                  timeout: float = 120.0,
+                 visualize: bool = True,
                  run_retries: int = 1,
                  executor_workers: int = 4,
                  agent_mode: str = "credit",
@@ -171,7 +173,7 @@ class SimulationManager:
         
         async with self._sem:
             started = time.time()
-            logger.info(f"[Run:{run_id}] START")
+            logger.info(f"[Run:{run_id}] START (mode: {self.agent_mode})")
             
             try:
                 result = await self._run_single(profile, steps)
@@ -207,7 +209,7 @@ class SimulationManager:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         profiles_list = list(profiles)
-        logger.info(f"Запуск {len(profiles_list)} симуляций, параллелизм: {self.concurrency}")
+        logger.info(f"Запуск {len(profiles_list)} симуляций в режиме {self.agent_mode}, параллелизм: {self.concurrency}")
 
         tasks = []
         results = []

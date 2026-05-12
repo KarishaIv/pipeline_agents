@@ -1,35 +1,28 @@
-import json
-from pathlib import Path
-from datetime import datetime
 import asyncio
-from typing import Any, Dict, Iterable, Optional, List
+import json
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, List
+
 import pandas as pd
-from pandas import DataFrame
-from pydantic.dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
 class StorageManager:
-    """
-    Асинхронный менеджер сохранения результатов.
-    - save_json_async: сохраняет dict -> файл (в executor)
-    - save_stream: дозапись логов/стримов
-    - save_batch: сохраняет набор результатов агрегированно
-    - append_parquet_async: добавляет данные в parquet файл
-    """
+    """Асинхронный менеджер сохранения результатов."""
 
     @staticmethod
     async def save_json_async(obj: Any, path: Path, ensure_ascii: bool = False, indent: int = 2) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_event_loop()
         data = json.dumps(obj, ensure_ascii=ensure_ascii, indent=indent)
-        await loop.run_in_executor(None, StorageManager._write_text_sync, path, data, "w", "utf-8")
-        logger.debug(f"Saved JSON -> {path}")
+        await loop.run_in_executor(None, StorageManager._write_text_sync, path, data, 'w', 'utf-8')
+        logger.debug(f'Saved JSON -> {path}')
 
     @staticmethod
-    def _write_text_sync(path: Path, data: str, mode: str = "w", encoding: str = "utf-8"):
+    def _write_text_sync(path: Path, data: str, mode: str = 'w', encoding: str = 'utf-8'):
         with open(path, mode, encoding=encoding) as f:
             f.write(data)
 
@@ -41,19 +34,19 @@ class StorageManager:
 
     @staticmethod
     def _append_line_sync(path: Path, line: str):
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
 
     @staticmethod
-    async def save_batch(results: Iterable[Dict], out_dir: Path, prefix: str = "batch", per_file: int = 100):
+    async def save_batch(results: Iterable[Dict], out_dir: Path, prefix: str = 'batch', per_file: int = 100):
         out_dir.mkdir(parents=True, exist_ok=True)
         results = list(results)
         total = len(results)
         for i in range(0, total, per_file):
-            batch = results[i: i + per_file]
-            filename = out_dir / f"{prefix}_{i // per_file + 1}.json"
+            batch = results[i:i + per_file]
+            filename = out_dir / f'{prefix}_{i // per_file + 1}.json'
             await StorageManager.save_json_async(batch, filename)
-            logger.info(f"Saved batch {i // per_file + 1} ({len(batch)} items) -> {filename}")
+            logger.info(f'Saved batch {i // per_file + 1} ({len(batch)} items) -> {filename}')
 
     async def save_result_stream(result: Dict, out_dir: Path, run_id: str):
         run_dir = out_dir / run_id

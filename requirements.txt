@@ -19,3 +19,14 @@ python-dotenv>=1.0.0
 scipy>=1.9.0
 tenacity>=8.2.0
 plotly>=5.14.0
+pandarallel
+pyarrow
+dvc
+dvc-s3
+qdrant_client
+openai
+langchain_community
+fastapi
+uvicorn[standard]
+langchain_qdrant
+uuid6

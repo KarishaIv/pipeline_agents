@@ -1,8 +1,6 @@
 import asyncio
 import json
 import pandas as pd
-import numpy as np
-from tqdm import tqdm
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Callable
@@ -194,14 +192,20 @@ class PipelineRunner:
         effective_world_contexts = wc_from_path or (world_contexts or {})
         effective_news_context = news_context or None
 
+        news_context = None
+        news_context_path = self.config.get('news_context_path')
+        if news_context_path:
+            with open(news_context_path, 'r', encoding='utf-8') as f:
+                news_context = json.load(f)
+
         manager = SimulationManager(
             out_dir=self.output_dir,
             concurrency=self.config['concurrency'],
             timeout=self.config['timeout'],
             run_retries=1,
-            agent_mode=self.config['agent_mode'],
+            agent_mode=self.config.get('agent_mode', 'survey'),
             decision_mode=self.config.get('decision_mode', 'direct'),
-            survey_mode=self.config.get('survey_mode', 'legacy'),
+            survey_mode=self.config.get('survey_mode', 'structured'),
             news_context=effective_news_context,
             world_contexts=effective_world_contexts,
             survey_questions=datasets.get('survey_questions', []),
@@ -493,7 +497,6 @@ async def _process_target_audiences_parallel(
                    f"({row['unique_clusters']} кластеров) - {row['data_source']}")
 
     return all_personas, ta_summary_stats
-
 def get_sim_reasonings(state: Dict) -> Dict[str, List[str]]:
     return {
         "emotional_reasonings": [entry['reasoning'] for entry in state['emotional_history']],
