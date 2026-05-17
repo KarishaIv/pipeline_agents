@@ -42,6 +42,30 @@ The compact summary tables are:
 - `metrics_summary.csv`;
 - `metrics_summary.json`.
 
+## Reconstructed code
+
+The `code/` folder contains a runnable reconstruction of the credit research implementation:
+
+- `code/credit_schemas.py` defines the packet, voice, decision, and news-signal contracts;
+- `code/credit_reasoning_agent.py` restores direct and compact-debate decision modes;
+- `code/credit_news_adapter.py` maps general news snapshots into credit-specific signals;
+- `code/benchmark_credit_reasoning.py` reruns the restored benchmark on frozen packets;
+- `code/build_credit_decision_packets.py` rebuilds frozen packets from old full-run outputs when those outputs are available.
+
+This code is kept as research-only archival code and is not imported by the current main survey pipeline. The preserved historical metrics under `results/` remain the canonical reported numbers.
+
+Minimal local smoke run:
+
+```bash
+python research/credit_reasoning/code/benchmark_credit_reasoning.py \
+  --decision-packets research/credit_reasoning/decision_packets/decision_packets.jsonl \
+  --decision-mode compact_debate \
+  --packet-sample 2 \
+  --repeats 1 \
+  --narrative-mode heuristic \
+  --out-dir /tmp/credit_reasoning_smoke
+```
+
 ## Main metric summary
 
 | Run | Mode | News | Decision rate | Stability | Calls | Latency, s | Persona alignment | Emotional nuance | Coherence |
