@@ -1,0 +1,8 @@
+run,decision_mode,news_context_used,n_packets,n_predictions,decision_rate,stability_rate,mean_probability_std,avg_calls_per_packet,avg_prompt_chars,avg_reasoning_chars,avg_latency_seconds,judge_sample_packets,persona_alignment_mean,emotional_nuance_mean,decision_coherence_mean
+v2_direct,direct,False,10,20,0.1,1.0,0.0025000000000000022,1.0,2546.3,290.35,2.42475,5,4.159999999999999,3.832,5.0
+v2_compact_debate,compact_debate,False,10,20,0.0,1.0,0.0475,3.0,7458.65,177.8,6.715715,5,4.02,4.720000000000001,5.0
+v3_compact,compact_debate,False,10,20,0.0,1.0,0.006149999999999989,3.0,7396.85,325.85,14.181720000000002,5,3.88,4.4399999999999995,5.0
+v3b_compact,compact_debate,False,10,20,0.0,1.0,0.0008500000000000007,3.0,7416.85,299.05,8.440145,5,4.159999999999999,4.720000000000001,5.0
+v3c_compact,compact_debate,False,10,20,0.0,1.0,0.0008999999999999897,3.0,6890.85,274.25,8.74912,5,4.02,4.720000000000001,5.0
+v3_no_news_current,compact_debate,False,10,20,0.0,1.0,0.0,3.0,7553.35,310.25,9.22214,5,4.02,4.252,5.0
+v3_with_news_current,compact_debate,True,10,20,0.0,1.0,0.007750000000000002,3.0,12207.8,368.8,9.26511,5,4.159999999999999,4.86,5.0

@@ -1,0 +1,17 @@
+{
+  "n_packets": 10,
+  "n_predictions": 20,
+  "decision_mode": "direct",
+  "decision_rate": 0.1,
+  "stability_rate": 1.0,
+  "mean_probability_std": 0.0025000000000000022,
+  "avg_reasoning_chars": 290.35,
+  "avg_prompt_chars": 2546.3,
+  "avg_calls_per_packet": 1.0,
+  "avg_latency_seconds": 2.42475,
+  "mode_runtime_seconds": 25.256,
+  "judge_sample_packets": 5,
+  "persona_alignment_mean": 4.159999999999999,
+  "emotional_nuance_mean": 3.832,
+  "decision_coherence_mean": 5.0
+}

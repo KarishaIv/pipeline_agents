@@ -1,0 +1,18 @@
+{
+  "n_packets": 10,
+  "n_predictions": 20,
+  "decision_mode": "compact_debate",
+  "decision_rate": 0.0,
+  "stability_rate": 1.0,
+  "mean_probability_std": 0.0008999999999999897,
+  "avg_reasoning_chars": 274.25,
+  "avg_prompt_chars": 6890.85,
+  "avg_calls_per_packet": 3.0,
+  "llm_narrative_rate": 1.0,
+  "avg_latency_seconds": 8.74912,
+  "mode_runtime_seconds": 91.461,
+  "judge_sample_packets": 5,
+  "persona_alignment_mean": 4.02,
+  "emotional_nuance_mean": 4.720000000000001,
+  "decision_coherence_mean": 5.0
+}

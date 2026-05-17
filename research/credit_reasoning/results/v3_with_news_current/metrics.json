@@ -1,0 +1,19 @@
+{
+  "n_packets": 10,
+  "n_predictions": 20,
+  "decision_mode": "compact_debate",
+  "news_context_used": true,
+  "decision_rate": 0.0,
+  "stability_rate": 1.0,
+  "mean_probability_std": 0.007750000000000002,
+  "avg_reasoning_chars": 368.8,
+  "avg_prompt_chars": 12207.8,
+  "avg_calls_per_packet": 3.0,
+  "llm_narrative_rate": 1.0,
+  "avg_latency_seconds": 9.26511,
+  "mode_runtime_seconds": 92.66,
+  "judge_sample_packets": 5,
+  "persona_alignment_mean": 4.159999999999999,
+  "emotional_nuance_mean": 4.86,
+  "decision_coherence_mean": 5.0
+}
