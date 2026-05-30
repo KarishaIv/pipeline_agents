@@ -8,6 +8,7 @@ import pandas as pd
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 import pyarrow.parquet as pq
+from src.meta_agent.configs import QDRANT_HOST, QDRANT_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ def create_collection_from_parquet(
 
 def init_qdrant() -> QdrantClient:
     """Подключается к Qdrant и создаёт коллекции из локальных parquet-файлов."""
-    client = QdrantClient(host="localhost", port=6333)
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
     for collection in COLLECTIONS:
         parquet_path = DATA_DIR / collection["parquet"]
