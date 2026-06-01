@@ -7,14 +7,18 @@
 from __future__ import annotations
 
 import ast
+import json
 import logging
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from pydantic import Field
 
 from sgr_agent_core.base_tool import BaseTool
 from src.meta_agent.configs import CHARTS_DIR, CODE_TIMEOUT
+from src.meta_agent.output_models import AgentArtifact
 from src.meta_agent.services import CodeExecutionConfig, CodeExecutionService
+from src.meta_agent.services.artifact import ArtifactService
 from src.meta_agent.tools.dto_tools import resolve_dto_or_error
 from src.meta_agent.utils.json_responses import serialize_tool_result
 
@@ -35,7 +39,7 @@ class ExecuteCodeTool(BaseTool):
 
     tool_name = "execute_code"
     description = (
-        "Выполнить Python-код для анализа DTO (можно несколько) через CodeExecutionService. "
+        "Выполнить Python-код для анализа DTO (можно несколько или без них, если они не нужны). "
         "В коде доступны dtos (dict по именам), dfs (dataframes), np, pd, plt, math, json, stats, save_chart(), save_json() и save_csv(). "
         "stdout возвращается в output; stderr возвращается в error. Файлы (PNG/JSON/CSV), созданные через save_*(), "
         "регистрируются как артефакты (JSON/CSV содержат только raw source data)."
@@ -57,26 +61,31 @@ class ExecuteCodeTool(BaseTool):
         for name in self.dto_names or []:
             _, payload, error = resolve_dto_or_error(context, name)
             if error:
-                errors.append(error)
+                try:
+                    errors.append(json.loads(error).get("error", error))
+                except json.JSONDecodeError:
+                    errors.append(error)
             elif payload is not None:
                 dto_payloads[name] = payload
         if errors:
-            return "\n".join(errors)
-        if not dto_payloads:
-            return serialize_tool_result({"error": "No valid DTO names provided"})
+            return serialize_tool_result({
+                "dto_names": self.dto_names,
+                "output": "(нет вывода)",
+                "error": "\n".join(errors),
+            })
 
-        # Snapshot existing chart files before execution so we can detect only newly created ones
-        existing_files: set[Path] = set()
-        if CHARTS_DIR.exists():
-            exts = ("*.png", "*.json", "*.csv")
-            for pattern in exts:
-                existing_files.update(CHARTS_DIR.glob(pattern))
+        artifact_service = ArtifactService(CHARTS_DIR)
+
+        # Snapshot existing artifact files before execution so we can detect only newly created ones
+        existing_files: set[Path] = {
+            path for path in artifact_service.artifacts_dir.iterdir() if path.is_file()
+        }
 
         executor = CodeExecutionService(
             config=CodeExecutionConfig(
                 timeout=CODE_TIMEOUT,
                 dto_payloads=dto_payloads,
-                charts_dir=CHARTS_DIR,
+                artifacts_dir=CHARTS_DIR,
             )
         )
 
@@ -91,34 +100,24 @@ class ExecuteCodeTool(BaseTool):
         if result.stderr:
             response["error"] = result.stderr
 
-        from src.meta_agent.output_models import AgentArtifact
-        from uuid import uuid4
-        from pathlib import Path
-
         if not hasattr(context, 'custom_context'):
             context.custom_context = {}
         if 'artifacts' not in context.custom_context:
             context.custom_context['artifacts'] = []
 
         # Register only newly created artifacts (charts, JSON/CSV raw data sources)
-        if CHARTS_DIR.exists():
-            try:
-                exts_map = {"*.png": ("chart", "image/png"), "*.json": ("data", "application/json"), "*.csv": ("csv", "text/csv")}
-                for pattern, (kind, mime) in exts_map.items():
-                    for f in CHARTS_DIR.glob(pattern):
-                        if f not in existing_files:
-                            artifact = AgentArtifact(
-                                id=str(uuid4()),
-                                kind=kind,
-                                path=str(f),
-                                filename=f.name,
-                                mime_type=mime,
-                                caption=f"{kind.upper()}: {f.name}",
-                                metadata={"source": "code_execution"},
-                            )
-                            context.custom_context['artifacts'].append(artifact)
-            except Exception as e:
-                logger.warning("Failed to register artifacts from code execution: %s", e)
+        try:
+            for artifact_path in artifact_service.artifacts_dir.iterdir():
+                if not artifact_path.is_file() or artifact_path in existing_files:
+                    continue
+                metadata = artifact_service.artifact_from_existing_file(
+                    artifact_path,
+                    metadata={"source": "code_execution"},
+                )
+                metadata["caption"] = metadata["caption"] or f"{metadata['kind'].upper()}: {metadata['filename']}"
+                context.custom_context['artifacts'].append(AgentArtifact(**metadata))
+        except Exception as e:
+            logger.warning("Failed to register artifacts from code execution: %s", e)
 
         return serialize_tool_result(response)
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from config import PROJECT_ROOT
 from src.meta_agent.dto import DtoPayload
 
 
@@ -44,14 +45,14 @@ class CodeExecutionConfig:
         timeout: Execution timeout in seconds (default 30).
         max_stdout: Maximum stdout/stderr capture size in bytes (default 100KB).
         dto_payloads: Optional dict of DTO name -> payload to inject into sandbox.
-        charts_dir: Directory for saving matplotlib figures.
+        artifacts_dir: Directory for saving generated artifacts.
         sandbox_globals: Optional override of sandbox global namespace.
     """
 
     timeout: int = 30
     max_stdout: int = 102400
     dto_payloads: Optional[dict[str, DtoPayload]] = None
-    charts_dir: Optional[Path] = None
+    artifacts_dir: Optional[Path] = None
     sandbox_globals: Optional[dict[str, Any]] = None
 
 
@@ -64,7 +65,7 @@ class CodeExecutionService:
     - Sandbox environment with safe builtins
     - Multiple DTOs injection via DTOS_DATA_JSON env var
     - Output capture with size limits
-    - Chart file management
+    - Artifact file management
     """
 
     DTOS_ENV_VAR = "DTOS_DATA_JSON"
@@ -94,7 +95,7 @@ class CodeExecutionService:
         # Prepare DTO data if provided (multiple DTOs)
         dto_import = ""
         dto_setup = ""
-        if self.config.dto_payloads is not None and len(self.config.dto_payloads) > 0:
+        if self.config.dto_payloads is not None:
             dto_import = "import json"
             dto_setup = """
 import os
@@ -105,21 +106,36 @@ except json.JSONDecodeError:
     dtos = {}
 """
 
-        # Prepare save_chart + raw data save functions (always available, with fallback to temp dir if needed)
-        save_chart_func = f"""
-import os as _os
+        # Prepare artifact save functions (always available, with fallback to temp dir if needed)
+        artifact_save_func = f"""
 from pathlib import Path as _Path
-from uuid import uuid4 as _uuid4
-from datetime import datetime as _datetime
+import sys as _sys
 import tempfile as _tempfile
-import json as _json
+import warnings as _warnings
 
-# Use provided charts_dir or fallback to temp directory
-_charts_dir = _Path(r'{str(self.config.charts_dir)}') if {self.config.charts_dir is not None} else _Path(_tempfile.gettempdir()) / 'agent_charts'
-_charts_dir.mkdir(parents=True, exist_ok=True)
+_project_root = r'{str(PROJECT_ROOT)}'
+if _project_root not in _sys.path:
+    _sys.path.insert(0, _project_root)
+
+# Use provided artifacts_dir or fallback to temp directory
+_artifacts_dir = _Path(r'{str(self.config.artifacts_dir)}').resolve() if {self.config.artifacts_dir is not None} else (_Path(_tempfile.gettempdir()) / 'agent_artifacts').resolve()
+_artifact_service = None
+
+_warnings.filterwarnings(
+    'ignore',
+    message="Core Pydantic V1 functionality isn't compatible with Python 3.14",
+    category=UserWarning,
+)
+
+def _get_artifact_service():
+    global _artifact_service
+    if _artifact_service is None:
+        from src.meta_agent.services.artifact import ArtifactService as _ArtifactService
+        _artifact_service = _ArtifactService(_artifacts_dir)
+    return _artifact_service
 
 def save_chart(filename=None):
-    \"\"\"Save current matplotlib figure to disk in the charts directory.
+    \"\"\"Save current matplotlib figure as an artifact.
 
     Args:
         filename: Optional filename. If None, auto-generates timestamp-based name.
@@ -127,30 +143,8 @@ def save_chart(filename=None):
     Returns:
         Path to the saved chart file.
     \"\"\"
-    if filename is None:
-        filename = f"chart_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.png"
-
-    # Sanitize filename to prevent path traversal
-    import re as _re
-    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
-    safe_name = _re.sub(r'_+', '_', safe_name)
-    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
-        safe_name = f"chart_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.png"
-    if not safe_name.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
-        safe_name += '.png'
-
-    # Append short unique suffix to every saved chart file (prevents collisions on repeated calls)
-    _unique = _uuid4().hex[:8]
-    if '.' in safe_name:
-        _base, _ext = safe_name.rsplit('.', 1)
-        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
-    else:
-        safe_name = f"{{safe_name}}_{{_unique}}"
-
-    target_path = _charts_dir / safe_name
-    plt.savefig(str(target_path), bbox_inches='tight', dpi=150)
-    plt.close()
-    return str(target_path)
+    path, _ = _get_artifact_service().save_chart(filename)
+    return path
 
 
 def save_json(data, filename=None):
@@ -163,36 +157,8 @@ def save_json(data, filename=None):
     Returns:
         Path to the saved JSON file.
     \"\"\"
-    if filename is None:
-        filename = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.json"
-
-    # Sanitize filename
-    import re as _re
-    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
-    safe_name = _re.sub(r'_+', '_', safe_name)
-    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
-        safe_name = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.json"
-    if not safe_name.lower().endswith('.json'):
-        safe_name += '.json'
-
-    # Append short unique suffix to every saved JSON file (prevents collisions)
-    _unique = _uuid4().hex[:8]
-    if '.' in safe_name:
-        _base, _ext = safe_name.rsplit('.', 1)
-        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
-    else:
-        safe_name = f"{{safe_name}}_{{_unique}}"
-
-    # Convert DataFrame to records if needed, keep raw
-    if hasattr(data, 'to_dict'):
-        records = data.to_dict(orient='records')
-    else:
-        records = data
-
-    target_path = _charts_dir / safe_name
-    with open(target_path, 'w', encoding='utf-8') as f:
-        _json.dump(records, f, ensure_ascii=False, indent=2)
-    return str(target_path)
+    path, _ = _get_artifact_service().save_json(data, filename)
+    return path
 
 
 def save_csv(data, filename=None):
@@ -205,33 +171,8 @@ def save_csv(data, filename=None):
     Returns:
         Path to the saved CSV file.
     \"\"\"
-    if filename is None:
-        filename = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S_%f')}}.csv"
-
-    # Sanitize filename
-    import re as _re
-    safe_name = _re.sub(r'[^\\w\\.-]', '_', filename.strip())
-    safe_name = _re.sub(r'_+', '_', safe_name)
-    if '..' in safe_name or '/' in safe_name or '\\\\' in safe_name:
-        safe_name = f"data_{{_datetime.now().strftime('%Y%m%d_%H%M%S')}}.csv"
-    if not safe_name.lower().endswith('.csv'):
-        safe_name += '.csv'
-
-    # Append short unique suffix to every saved CSV file (prevents collisions)
-    _unique = _uuid4().hex[:8]
-    if '.' in safe_name:
-        _base, _ext = safe_name.rsplit('.', 1)
-        safe_name = f"{{_base}}_{{_unique}}.{{_ext}}"
-    else:
-        safe_name = f"{{safe_name}}_{{_unique}}"
-
-    target_path = _charts_dir / safe_name
-    if hasattr(data, 'to_csv'):
-        data.to_csv(target_path, index=False)
-    else:
-        import pandas as _pd
-        _pd.DataFrame(data).to_csv(target_path, index=False)
-    return str(target_path)
+    path, _ = _get_artifact_service().save_csv(data, filename)
+    return path
 """
 
         sandbox_script = f"""
@@ -323,8 +264,8 @@ try:
 except Exception:
     dfs = {{}}
 
-# Setup save_chart function if charts directory is available
-{save_chart_func}
+# Setup artifact save functions
+{artifact_save_func}
 
 # Sandbox namespace
 _namespace = {{
@@ -405,6 +346,21 @@ except Exception:
                     timeout_occurred=False,
                 )
 
+        artifacts_dir = (
+            self.config.artifacts_dir.resolve()
+            if self.config.artifacts_dir is not None
+            else (Path(tempfile.gettempdir()) / "agent_artifacts").resolve()
+        )
+        try:
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return ExecutionResult(
+                stdout="",
+                stderr=f"Failed to create artifacts directory: {e}",
+                exit_code=1,
+                timeout_occurred=False,
+            )
+
         # Create script with sandbox
         sandbox_script = self._make_sandbox_script()
 
@@ -424,6 +380,7 @@ except Exception:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
+                cwd=str(artifacts_dir),
                 text=True,
             )
 

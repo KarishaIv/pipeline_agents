@@ -1,6 +1,11 @@
-"""Tests for code writer save_chart and artifact propagation (should fail before implementation)."""
+"""Tests for code writer artifact propagation."""
+
+import json
+from pathlib import Path
+
 import pytest
-from unittest.mock import MagicMock
+
+from src.meta_agent.dto import DtoPayload
 
 
 @pytest.mark.asyncio
@@ -21,62 +26,79 @@ print("Chart saved")
 
     result = await service.execute_async(code)
 
-    # Should not error with NameError: name 'save_chart' is not defined
-    assert "NameError" not in result.stderr or "save_chart" not in result.stderr
-    assert result.exit_code == 0 or "saved" in result.stdout.lower() or "Chart saved" in result.stdout
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert "Chart saved" in result.stdout
 
 
 @pytest.mark.asyncio
-async def test_execute_code_tool_returns_created_artifacts(sample_dto_data, mocker):
-    """ExecuteCodeTool should report created_artifacts from code execution."""
+async def test_execute_code_tool_registers_chart_artifact(sample_dto_data, tmp_path, mocker):
+    """ExecuteCodeTool should register charts created by save_chart()."""
     from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
 
-    test_payload = MagicMock()
-    test_payload.model_dump.return_value = {"rows": sample_dto_data}
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["id", "age", "income", "text"],
+        rows=sample_dto_data,
+    )
 
-    mocker.patch("src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
-                 return_value=(MagicMock(), test_payload, None))
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+    mocker.patch("src.meta_agent.tools.code_writer_tools.CHARTS_DIR", tmp_path)
 
     tool = ExecuteCodeTool(
         reasoning="Create visualization",
-        dto_name="test_dto",
-        code="import matplotlib.pyplot as plt\nplt.plot([1,2,3])\nsave_chart('output.png')\nprint('done')"
+        dto_names=["test_dto"],
+        code="plt.plot([1, 2, 3])\nsave_chart('output.png')\nprint('done')",
     )
 
-    mock_context = MagicMock()
+    mock_context = type("Context", (), {})()
     mock_context.custom_context = {}
-    mock_config = MagicMock()
 
-    result = await tool(mock_context, mock_config)
+    result = await tool(mock_context, object())
+    payload = json.loads(result)
+    artifacts = mock_context.custom_context["artifacts"]
 
-    # Result should mention created artifacts or chart
-    assert "created_artifacts" in result or "artifacts" in result or "output.png" in result or "success" in result
+    assert payload["output"] == "done"
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact.kind == "chart"
+    assert artifact.mime_type == "image/png"
+    assert artifact.filename.endswith(".png")
+    assert artifact.metadata["source"] == "code_execution"
+    assert Path(artifact.path).exists()
 
 
 @pytest.mark.asyncio
-async def test_execute_code_tool_registers_artifact_in_context(sample_dto_data, mocker):
-    """ExecuteCodeTool should register artifacts in tool context."""
+async def test_execute_code_tool_does_not_register_artifact_without_created_files(sample_dto_data, tmp_path, mocker):
+    """ExecuteCodeTool should leave artifact list empty when code creates no files."""
     from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
 
-    test_payload = MagicMock()
-    test_payload.model_dump.return_value = {"rows": sample_dto_data}
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["id", "age", "income", "text"],
+        rows=sample_dto_data,
+    )
 
-    mocker.patch("src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
-                 return_value=(MagicMock(), test_payload, None))
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+    mocker.patch("src.meta_agent.tools.code_writer_tools.CHARTS_DIR", tmp_path)
 
     tool = ExecuteCodeTool(
         reasoning="Generate chart",
-        dto_name="data",
-        code="print('Analysis complete')"
+        dto_names=["test_dto"],
+        code="print('Analysis complete')",
     )
 
-    mock_context = MagicMock()
+    mock_context = type("Context", (), {})()
     mock_context.custom_context = {"artifacts": []}
-    mock_config = MagicMock()
 
-    await tool(mock_context, mock_config)
+    result = await tool(mock_context, object())
+    payload = json.loads(result)
 
-    # If artifacts were created, they should be in context
-    mock_context.custom_context.get("artifacts", [])
-    # This test is lenient since save_chart may not create files in test sandbox
-    # The key is that the mechanism exists for registering artifacts
+    assert payload["output"] == "Analysis complete"
+    assert mock_context.custom_context["artifacts"] == []

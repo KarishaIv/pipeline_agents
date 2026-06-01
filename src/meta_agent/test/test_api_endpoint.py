@@ -74,3 +74,20 @@ def test_ask_response_structure():
     assert "thread_id" in response_dict
     assert "outputs" in response_dict
     assert response_dict["outputs"][0]["type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_serves_json_with_json_mime(tmp_path, mocker):
+    """GET /artifacts should serve JSON artifacts with application/json MIME type."""
+    from src.scripts.serve_meta_agent import get_artifact
+
+    charts_dir = tmp_path / "charts"
+    charts_dir.mkdir()
+    artifact_path = charts_dir / "raw.json"
+    artifact_path.write_text('{"ok": true}', encoding="utf-8")
+    mocker.patch("src.scripts.serve_meta_agent.CHARTS_DIR", charts_dir)
+
+    response = await get_artifact("raw.json")
+
+    assert response.media_type == "application/json"
+    assert response.path == artifact_path

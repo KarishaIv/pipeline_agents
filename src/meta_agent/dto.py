@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class DtoPayload(BaseModel):
@@ -18,41 +18,21 @@ class DtoPayload(BaseModel):
     Поля:
         summary_text: человекочитаемое описание набора данных;
         columns: имена колонок в порядке появления;
-        num_rows: общее число строк;
-        sample: первые строки для предварительного просмотра;
         rows: полный список строк данных;
         meta: служебные метаданные источника, например вектор, limit или фильтр.
     """
 
     summary_text: str
     columns: list[str]
-    num_rows: int
-    sample: list[dict[str, Any]]
     rows: list[dict[str, Any]]
     meta: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"arbitrary_types_allowed": True}
 
-    @field_validator("num_rows")
-    @classmethod
-    def validate_num_rows(cls, v: int, info) -> int:
-        """Проверить, что num_rows совпадает с фактическим числом rows."""
-        if v < 0:
-            raise ValueError("num_rows must be non-negative")
-        if "rows" in info.data and len(info.data["rows"]) != v:
-            raise ValueError(f"num_rows={v} does not match len(rows)={len(info.data['rows'])}")
-        return v
-
-    @field_validator("sample")
-    @classmethod
-    def validate_sample(cls, v: list[dict], info) -> list[dict]:
-        """Проверить, что sample не длиннее rows."""
-        if "rows" in info.data and v and info.data["rows"]:
-            sample_len = len(v)
-            rows_len = len(info.data["rows"])
-            if sample_len > rows_len:
-                raise ValueError(f"sample length {sample_len} exceeds rows length {rows_len}")
-        return v
+    @property
+    def num_rows(self) -> int:
+        """Вернуть число строк, вычисленное из rows."""
+        return len(self.rows)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Преобразовать DTO payload в pandas DataFrame по rows и columns."""
@@ -62,14 +42,16 @@ class DtoPayload(BaseModel):
             return pd.DataFrame(columns=self.columns)
         return pd.DataFrame()
 
-    def get_summary(self, dto_name: str, max_len: int = 100) -> DtoSummary:
-        """Создать DtoSummary и при необходимости обрезать sample."""
-        truncated_sample = self.sample
+    def get_summary(
+        self, dto_name: str, max_len: int = 100, sample_size: int = 5
+    ) -> DtoSummary:
+        """Создать DtoSummary с preview-sample, вычисленным из rows."""
+        truncated_sample: list[dict[str, Any]] | str = self.rows[:sample_size]
         if isinstance(truncated_sample, list):
             import json
-            sample_str = json.dumps(truncated_sample)
+            sample_str = json.dumps(truncated_sample, ensure_ascii=False)
             if len(sample_str) > max_len:
-                truncated_sample = str(sample_str)[:max_len]
+                truncated_sample = sample_str[:max_len]
         return DtoSummary(
             dto_name=dto_name,
             summary_text=self.summary_text,

@@ -1,4 +1,4 @@
-"""Tests for analyzer chart tools with artifact registration (should fail before implementation)."""
+"""Tests for analyzer chart tools with artifact registration."""
 import json
 import pytest
 from unittest.mock import MagicMock
@@ -9,20 +9,16 @@ from src.meta_agent.dto import DtoPayload
 
 @pytest.mark.asyncio
 async def test_create_chart_tool_registers_artifact(temp_charts_dir, sample_dto_data, mocker):
-    """CreateChartTool should register a ChartArtifact in tool context while returning JSON."""
+    """CreateChartTool should register a chart AgentArtifact and return save metadata."""
     from src.meta_agent.tools.analyzer_tools import CreateChartTool
 
     test_payload = DtoPayload(
         summary_text="test",
         columns=["age", "income"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     df = pd.DataFrame(sample_dto_data)
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, test_payload, None))
-    mocker.patch("matplotlib.pyplot.savefig")
-    mocker.patch("matplotlib.pyplot.close")
 
     tool = CreateChartTool(
         reasoning="Visualize data",
@@ -37,12 +33,23 @@ async def test_create_chart_tool_registers_artifact(temp_charts_dir, sample_dto_
 
     result = await tool(mock_context, mock_config)
 
-    # Tool should return JSON with concise chart info
     data = json.loads(result)
-    assert "chart_saved" in data or "success" in data
+    assert data["success"] is True
+    assert data["title"] == "Test Chart"
+    assert data["type"] == "bar"
+    assert data["dto"]["dto_name"] == "test_dto"
 
-    # Tool should have registered an artifact in custom context
-    assert "artifacts" in mock_context.custom_context or "chart_artifacts" in mock_context.custom_context
+    artifacts = mock_context.custom_context["artifacts"]
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact.kind == "chart"
+    assert artifact.caption == "Test Chart"
+    assert artifact.mime_type == "image/png"
+    assert artifact.metadata == {"chart_type": "bar", "dto_name": "test_dto"}
+    assert artifact.filename.endswith(".png")
+    artifact_path = temp_charts_dir / artifact.filename
+    assert artifact.path == str(artifact_path)
+    assert artifact_path.exists()
 
 
 @pytest.mark.asyncio
@@ -53,14 +60,10 @@ async def test_create_chart_tool_artifact_has_required_fields(temp_charts_dir, s
     test_payload = DtoPayload(
         summary_text="test",
         columns=["age", "income"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     df = pd.DataFrame(sample_dto_data)
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(df, test_payload, None))
-    mocker.patch("matplotlib.pyplot.savefig")
-    mocker.patch("matplotlib.pyplot.close")
 
     tool = CreateChartTool(
         reasoning="Visualize",
@@ -75,12 +78,14 @@ async def test_create_chart_tool_artifact_has_required_fields(temp_charts_dir, s
 
     await tool(mock_context, mock_config)
 
-    # Check if artifact was registered
     artifacts = mock_context.custom_context.get("artifacts", [])
-    if len(artifacts) > 0:
-        artifact = artifacts[0]
-        assert hasattr(artifact, "id") or "id" in artifact
-        assert hasattr(artifact, "kind") or "kind" in artifact
-        assert artifact.kind == "chart" or artifact.get("kind") == "chart"
-        assert hasattr(artifact, "mime_type") or "mime_type" in artifact
-        assert "png" in str(artifact.mime_type).lower() or "png" in str(artifact.get("mime_type", "")).lower()
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact.id
+    assert artifact.kind == "chart"
+    artifact_path = temp_charts_dir / artifact.filename
+    assert artifact.path == str(artifact_path)
+    assert artifact_path.exists()
+    assert artifact.mime_type == "image/png"
+    assert artifact.caption == "Trend"
+    assert artifact.metadata == {"chart_type": "line", "dto_name": "test_dto"}

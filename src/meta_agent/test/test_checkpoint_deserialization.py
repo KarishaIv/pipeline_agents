@@ -17,8 +17,6 @@ def test_pydantic_direct_validation_with_nested_dto():
     dto_payload = DtoPayload(
         summary_text="Test data",
         columns=["id", "name"],
-        num_rows=2,
-        sample=[{"id": 1, "name": "Alice"}],
         rows=[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
         meta={"source": "test"},
     )
@@ -52,8 +50,6 @@ def test_pydantic_validation_from_dict_with_nested_dto():
             "test_dto": {
                 "summary_text": "Test data",
                 "columns": ["id", "name"],
-                "num_rows": 2,
-                "sample": [{"id": 1, "name": "Alice"}],
                 "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
                 "meta": {"source": "test"},
             }
@@ -87,8 +83,6 @@ def test_pydantic_model_dump_and_reload():
     original_dto = DtoPayload(
         summary_text="Test data",
         columns=["id", "name"],
-        num_rows=2,
-        sample=[{"id": 1, "name": "Alice"}],
         rows=[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
         meta={"source": "test"},
     )
@@ -138,8 +132,6 @@ def test_merge_dto_store_reducer_with_dicts():
     dto1 = DtoPayload(
         summary_text="First",
         columns=["a"],
-        num_rows=1,
-        sample=[{"a": 1}],
         rows=[{"a": 1}],
     )
 
@@ -151,8 +143,6 @@ def test_merge_dto_store_reducer_with_dicts():
         "dto2": {
             "summary_text": "Second",
             "columns": ["b"],
-            "num_rows": 1,
-            "sample": [{"b": 2}],
             "rows": [{"b": 2}],
         }
     }

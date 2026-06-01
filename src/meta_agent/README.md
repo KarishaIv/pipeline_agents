@@ -4,9 +4,10 @@
 
 - принимать вопрос пользователя;
 - извлекать данные из локального Qdrant;
-- считать статистики и строить графики;
+- считать статистики, строить графики и сохранять файлы-артефакты;
 - при необходимости делегировать вычисления отдельному `code_writer`;
-- возвращать итоговый ответ с сохранением контекста сессии по `thread_id`.
+- возвращать итоговый ответ с сохранением контекста сессии по `thread_id`;
+- доставлять текст, JSON, графики и CSV-файлы через HTTP API или Telegram.
 
 Основной HTTP-вход находится в `src/scripts/serve_meta_agent.py`, а основной Python API - в `meta_graph_manager.invoke_graph_session(question, thread_id)`.
 
@@ -124,6 +125,7 @@ uvicorn src.scripts.serve_meta_agent:app --host 0.0.0.0 --port 8000
 После старта будет доступен endpoint:
 
 - `POST /ask` (основной, рекомендуемый)
+- `GET /artifacts/{artifact_id}` (скачивание созданных артефактов)
 
 Пример запроса:
 
@@ -163,9 +165,26 @@ curl -X POST http://localhost:8000/ask \
   -d '{"question": "А теперь только по молодежной аудитории", "thread_id": "<thread-id>"}'
 ```
 
+## Артефакты и файлы
+
+Meta-agent использует единый `ArtifactService`. Он сохраняет и описывает:
+
+- графики: `.png`, `.jpg`, `.jpeg`;
+- JSON raw data: `.json`;
+- табличные raw data: `.csv`;
+- прочие файлы как generic `file`.
+
+В коде `code_writer` доступны:
+
+- `plt`, `np`, `pd`, `math`, `json`, `stats`;
+- `dtos` и `dfs` (пустые словари, если `dto_names=[]`);
+- `save_chart(filename)`;
+- `save_json(data, filename)`;
+- `save_csv(data, filename)`.
+
 ## Telegram Bot
 
-Боты запускается как отдельный процесс, использует long polling и вызывает API `/ask`.
+Бот запускается как отдельный процесс, использует long polling и по умолчанию вызывает HTTP API `/ask`.
 
 ### Установка и конфигурация
 
@@ -188,8 +207,24 @@ TELEGRAM_THREAD_SCOPE=chat
 Из корня репозитория (убедитесь, что API работает на http://localhost:8000):
 
 ```bash
-python3 -m src.scripts.serve_telegram_bot
+python -m src.scripts.serve_telegram_bot
 ```
+
+### Локальный режим без HTTP API
+
+Для отладки можно запустить Telegram-бот без HTTP-вызовов к meta-agent:
+
+```bash
+TELEGRAM_LOCAL_META_AGENT=1 python -m src.scripts.serve_telegram_bot
+```
+
+В этом режиме бот:
+
+- вызывает `meta_graph_manager.invoke_graph_session()` внутри того же процесса;
+- читает `/artifacts/...` напрямую из `CHARTS_DIR`;
+- сохраняет обычное поведение сессий Telegram.
+
+Это dev-only режим. Обычный production-путь остается через `META_AGENT_API_URL` и HTTP API.
 
 ### Команды бота
 
@@ -258,7 +293,9 @@ python3 -m src.scripts.serve_telegram_bot
 - Одна сессия всегда активна — все сообщения идут в неё.
 - Все сообщения обрабатываются по очереди (per-chat lock).
 - Длинные ответы автоматически разбиваются на несколько сообщений.
-- Будущие расширения поддерживают JSON и файловые выходы (PDF, графики).
+- JSON отправляется как форматированный текст.
+- Графики отправляются через multipart `sendPhoto`.
+- CSV/PDF/прочие файлы отправляются через multipart `sendDocument`.
 
 
 
@@ -270,7 +307,7 @@ python3 -m src.scripts.serve_telegram_bot
 - `configs/` — runtime, catalog (коллекции Qdrant), workers, telegram;
 - `prompts/` — системные промпты (supervisor, extractor, analyzer, code_writer, history, ood);
 - `tools/` — Qdrant, DTO, analyzer, budget, output, code-writer инструменты;
-- `services/` — Qdrant singleton, code execution sandbox, chart generation;
+- `services/` — Qdrant singleton, code execution sandbox, unified artifact service;
 - `utils/` — history compression, state reducers, routing, JSON helpers;
 - `dto.py`, `output_models.py`, `api_models.py` — Pydantic модели запросов/ответов;
 - `workers.py` — воркеры для параллельных задач;

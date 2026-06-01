@@ -108,3 +108,69 @@ async def test_telegram_bot_client_send_photo_signature_not_url():
         assert "url" not in params, "send_photo should not have url parameter (use multipart content instead)"
         # Should have content, filename, or similar
         assert "content" in params or "file" in params or "data" in params
+
+
+@pytest.mark.asyncio
+async def test_telegram_bot_client_send_document_multipart():
+    """TelegramBotClient.send_document should upload binary content, not pass a URL."""
+    from src.meta_agent.telegram.bot_client import TelegramBotClient
+
+    client = TelegramBotClient("test-token")
+    client.client = AsyncMock()
+
+    mock_response = MagicMock()
+    mock_response.json = lambda: {"ok": True, "result": {"message_id": 124}}
+    client.client.post = AsyncMock(return_value=mock_response)
+
+    await client.send_document(
+        chat_id=123,
+        content=b"name,score\nAlice,10\n",
+        filename="scores.csv",
+        mime_type="text/csv",
+        caption="Scores",
+    )
+
+    call_kwargs = client.client.post.call_args.kwargs
+    assert "files" in call_kwargs
+    assert "json" not in call_kwargs
+    assert call_kwargs["files"]["document"] == (
+        "scores.csv",
+        b"name,score\nAlice,10\n",
+        "text/csv",
+    )
+
+
+@pytest.mark.asyncio
+async def test_message_handler_file_output_fetches_and_uploads_document():
+    """MessageHandler should fetch FileOutput bytes from API and upload via multipart."""
+    from src.meta_agent.telegram.message_handler import MessageHandler
+    from src.meta_agent.api_models import FileOutput
+
+    mock_telegram = AsyncMock()
+    mock_meta_agent = AsyncMock()
+    mock_session = MagicMock()
+
+    handler = MessageHandler(mock_telegram, mock_meta_agent, mock_session)
+    mock_meta_agent.fetch_artifact_bytes = AsyncMock(
+        return_value=(b"name,score\nAlice,10\n", "text/csv", "scores.csv")
+    )
+
+    outputs = [
+        FileOutput(
+            filename="scores.csv",
+            mime_type="text/csv",
+            download_url="/artifacts/scores.csv",
+            caption="Scores",
+        )
+    ]
+
+    await handler.send_outputs(123, outputs)
+
+    mock_meta_agent.fetch_artifact_bytes.assert_awaited_once_with("/artifacts/scores.csv")
+    mock_telegram.send_document.assert_awaited_once_with(
+        123,
+        content=b"name,score\nAlice,10\n",
+        filename="scores.csv",
+        mime_type="text/csv",
+        caption="Scores",
+    )

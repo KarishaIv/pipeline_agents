@@ -22,8 +22,6 @@ def test_merge_dto_store_converts_dict_to_dtopayload():
         "existing_dto": DtoPayload(
             summary_text="Existing data",
             columns=["id", "name"],
-            num_rows=2,
-            sample=[{"id": 1, "name": "Alice"}],
             rows=[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
             meta={"source": "checkpoint"},
         )
@@ -34,16 +32,12 @@ def test_merge_dto_store_converts_dict_to_dtopayload():
         "existing_dto": {
             "summary_text": "Updated data",
             "columns": ["id", "name"],
-            "num_rows": 2,
-            "sample": [{"id": 1, "name": "Alice"}],
             "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
             "meta": {"updated": True},
         },
         "new_dto": {
             "summary_text": "New data from node",
             "columns": ["x", "y"],
-            "num_rows": 3,
-            "sample": [{"x": 1, "y": 10}],
             "rows": [{"x": 1, "y": 10}, {"x": 2, "y": 20}, {"x": 3, "y": 30}],
             "meta": {"source": "node"},
         },
@@ -71,8 +65,6 @@ def test_merge_dto_store_preserves_existing_dtopayload():
     dto1 = DtoPayload(
         summary_text="First",
         columns=["a"],
-        num_rows=1,
-        sample=[{"a": 1}],
         rows=[{"a": 1}],
     )
 
@@ -83,8 +75,6 @@ def test_merge_dto_store_preserves_existing_dtopayload():
         "dto2": {
             "summary_text": "Second",
             "columns": ["b"],
-            "num_rows": 1,
-            "sample": [{"b": 2}],
             "rows": [{"b": 2}],
         }
     }
@@ -105,7 +95,7 @@ def test_merge_dto_store_handles_invalid_dict():
     invalid_dict = {
         "incomplete_dto": {
             "summary_text": "Incomplete",
-            # Missing required fields: columns, num_rows, sample, rows
+            # Missing required fields: columns, rows
         }
     }
 
@@ -120,8 +110,6 @@ def test_merge_dto_store_with_none_right():
         "dto1": DtoPayload(
             summary_text="Data",
             columns=["a"],
-            num_rows=1,
-            sample=[{"a": 1}],
             rows=[{"a": 1}],
         )
     }
@@ -143,8 +131,6 @@ def test_merge_dto_store_empty_stores():
     dto = DtoPayload(
         summary_text="Data",
         columns=["a"],
-        num_rows=1,
-        sample=[{"a": 1}],
         rows=[{"a": 1}],
     )
     merged3 = merge_dto_store({"dto": dto}, {})

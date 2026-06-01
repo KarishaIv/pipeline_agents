@@ -102,3 +102,55 @@ async def test_finalize_invoke_mixes_text_outputs_and_chart_artifacts():
     assert len(image_outputs) >= 1
     assert text_outputs[0].text == "Here is your analysis:"
     assert "Sales Distribution" in image_outputs[0].caption or image_outputs[0].caption == "Sales Distribution"
+
+
+@pytest.mark.asyncio
+async def test_finalize_invoke_converts_json_and_csv_artifacts(tmp_path):
+    """_finalize_invoke should expose JSON as JsonOutput and CSV as FileOutput."""
+    from src.meta_agent.output_models import JsonOutput, FileOutput
+
+    manager = MetaAgentGraphManager()
+    graph = MagicMock()
+    graph.aupdate_state = AsyncMock()
+    manager._graph = graph
+
+    json_path = tmp_path / "raw.json"
+    json_path.write_text('[{"name": "Alice", "score": 10}]', encoding="utf-8")
+    csv_path = tmp_path / "raw.csv"
+    csv_path.write_text("name,score\nAlice,10\n", encoding="utf-8")
+
+    result = {
+        "outputs": [],
+        "artifacts": [
+            AgentArtifact(
+                kind="data",
+                path=str(json_path),
+                filename="raw.json",
+                mime_type="application/json",
+                caption="Raw JSON",
+            ),
+            AgentArtifact(
+                kind="csv",
+                path=str(csv_path),
+                filename="raw.csv",
+                mime_type="text/csv",
+                caption="Raw CSV",
+            ),
+        ],
+        "history": [],
+        "dto_store": {},
+    }
+
+    with patch(
+        "src.meta_agent.graph.build_persisted_history",
+        new=AsyncMock(return_value=[]),
+    ):
+        outputs = await manager._finalize_invoke({"configurable": {"thread_id": "t-3"}}, result)
+
+    json_outputs = [o for o in outputs if isinstance(o, JsonOutput)]
+    file_outputs = [o for o in outputs if isinstance(o, FileOutput)]
+
+    assert json_outputs[0].data == [{"name": "Alice", "score": 10}]
+    assert json_outputs[0].caption == "Raw JSON"
+    assert file_outputs[0].download_url == "/artifacts/raw.csv"
+    assert file_outputs[0].mime_type == "text/csv"

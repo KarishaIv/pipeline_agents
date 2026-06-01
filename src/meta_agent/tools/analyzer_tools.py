@@ -93,7 +93,7 @@ class CreateChartTool(BaseTool):
 
     tool_name = "create_chart"
     description = (
-        "Построить matplotlib-график по данным DTO, сохранить PNG через ChartService "
+        "Построить matplotlib-график по данным DTO, сохранить PNG через ArtifactService "
         "и зарегистрировать созданный файл как артефакт агента."
     )
 
@@ -213,9 +213,9 @@ class CreateChartTool(BaseTool):
         CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
         try:
-            from src.meta_agent.services.chart import ChartService
+            from src.meta_agent.services.artifact import ArtifactService
 
-            chart_service = ChartService(CHARTS_DIR)
+            artifact_service = ArtifactService(CHARTS_DIR)
             fig, ax = plt.subplots(figsize=(10, 6))
 
             match self.chart_type:
@@ -270,15 +270,15 @@ class CreateChartTool(BaseTool):
             plt.tight_layout()
 
             # Сохраняем через сервис, чтобы получить единый формат метаданных.
-            chart_path, artifact_metadata = chart_service.save_chart()
+            chart_path, artifact_metadata = artifact_service.save_chart(
+                metadata={"chart_type": self.chart_type, "dto_name": self.dto_name}
+            )
 
             if not hasattr(context, 'custom_context'):
                 context.custom_context = {}
             if 'artifacts' not in context.custom_context:
                 context.custom_context['artifacts'] = []
 
-            artifact_metadata['chart_type'] = self.chart_type
-            artifact_metadata['dto_name'] = self.dto_name
             agent_artifact = AgentArtifact(
                 id=artifact_metadata['id'],
                 kind=artifact_metadata['kind'],
@@ -286,7 +286,7 @@ class CreateChartTool(BaseTool):
                 filename=artifact_metadata['filename'],
                 mime_type=artifact_metadata['mime_type'],
                 caption=self.title,
-                metadata=artifact_metadata['metadata'] | {'chart_type': self.chart_type, 'dto_name': self.dto_name}
+                metadata=artifact_metadata['metadata'],
             )
 
             context.custom_context['artifacts'].append(agent_artifact)

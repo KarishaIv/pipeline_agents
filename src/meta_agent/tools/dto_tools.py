@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 DTO_STORE_KEY = "dto_store"
 _DEFAULT_SAMPLE_SIZE = 5
-_DTO_PAYLOAD_REQUIRED_FIELDS = {"summary_text", "columns", "num_rows", "sample", "rows"}
+_DTO_PAYLOAD_REQUIRED_FIELDS = {"summary_text", "columns", "rows"}
 
 
 def _ensure_context_dict(context: "AgentContext") -> dict:
@@ -138,8 +138,6 @@ def register_dto(
     payload = DtoPayload(
         summary_text=summary_text or f"{source}: {len(rows)} rows, {len(columns)} columns",
         columns=columns,
-        num_rows=len(rows),
-        sample=rows[:_DEFAULT_SAMPLE_SIZE],
         rows=rows,
         meta=meta or {},
     )

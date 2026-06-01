@@ -4,7 +4,9 @@
 - `credit mode (кредитный режим)` для моделирования реакции на кредитное предложение;
 - `survey mode (опросный режим)` для генерации ответов на опросные вопросы.
 
-Текущий основной инженерный результат в репозитории — `structured survey mode (структурированный survey-режим)`. Он работает через явные `voices (голоса)`, кодовую агрегацию и поддерживает подключение `news context (новостного контекста)`.
+В репозитории также есть `meta-agent` — отдельный LangGraph-оркестратор для интерактивной аналитики по данным пайплайна. Он отвечает на вопросы пользователя, извлекает данные из Qdrant, запускает sandboxed Python-код, создает артефакты (графики, JSON, CSV) и может отдавать результаты через HTTP API или Telegram-бота.
+
+Текущий основной инженерный результат в репозитории — `structured survey mode (структурированный survey-режим)` и `meta-agent` для интерактивного анализа результатов. Structured survey работает через явные `voices (голоса)`, кодовую агрегацию и поддерживает подключение `news context (новостного контекста)`.
 
 ## Что есть в репозитории
 
@@ -14,6 +16,10 @@
 - `src/agents/structured_survey_reasoner.py` — новый `structured survey runtime (структурированный survey-рантайм)`.
 - `src/agents/survey_news_adapter.py` — `news adapter (адаптер новостного контекста)` для survey.
 - `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных news JSON.
+- `src/meta_agent/` — LangGraph meta-agent для интерактивной аналитики, Qdrant-поиска, выполнения кода и доставки артефактов.
+- `src/scripts/serve_meta_agent.py` — FastAPI API meta-agent (`POST /ask`, `GET /artifacts/{artifact_id}`).
+- `src/scripts/serve_telegram_bot.py` — Telegram long-polling бот для meta-agent.
+- `src/scripts/init_qdrant.py` — инициализация Qdrant-коллекций из parquet-данных.
 - `scripts/benchmarks/benchmark_survey_reasoning.py` — основной `survey benchmark (survey-бенчмарк)`.
 
 ## Зависимости и окружение
@@ -174,6 +180,51 @@ python main.py \
 ```
 
 При необходимости туда тоже можно передать `--news-context-path`, но основной финальный результат в репозитории сейчас связан именно с `structured survey mode (структурированным survey-режимом)`.
+
+## Meta-agent
+
+`src/meta_agent/` — интерактивный аналитический агент поверх данных пайплайна. Он использует LangGraph, Qdrant, Yandex GPT и изолированный сервис выполнения Python-кода.
+
+Что умеет:
+- принимать пользовательский вопрос через `POST /ask` или Telegram;
+- искать релевантные данные в Qdrant-коллекциях `questions`, `personas`, `target_audiences`, `simulations`, `world_contexts`;
+- выполнять анализ полученных данных и создавать артефакты;
+- выполнять Python-код через `CodeExecutionService`;
+- создавать и возвращать артефакты: графики, JSON и CSV;
+
+Минимальный запуск с нуля:
+
+```bash
+uv sync
+dvc pull
+python -m src.scripts.init_qdrant
+docker run -p 6333:6333 -v "$(pwd)/qdrant_storage:/qdrant/storage" qdrant/qdrant
+python -m src.scripts.serve_meta_agent
+```
+
+Запрос:
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Построй диаграмму распределения возрастов персон"}'
+```
+
+Telegram-бот:
+
+```bash
+python -m src.scripts.serve_telegram_bot
+```
+
+Если API временно недоступен, бот можно запустить в dev-режиме без HTTP-вызова meta-agent:
+
+```bash
+TELEGRAM_LOCAL_META_AGENT=1 python -m src.scripts.serve_telegram_bot
+```
+
+В этом режиме бот вызывает meta-agent in-process. 
+
+Подробная документация находится в `src/meta_agent/README.md`.
 
 ## 📚 Ключевые компоненты
 

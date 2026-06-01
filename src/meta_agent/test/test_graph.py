@@ -123,8 +123,6 @@ async def test_prepare_invoke_builds_config_and_state_update():
     test_payload = DtoPayload(
         summary_text="test",
         columns=[],
-        num_rows=0,
-        sample=[],
         rows=[],
     )
     graph.aget_state = AsyncMock(

@@ -181,22 +181,16 @@ def test_merge_dto_store_reducer():
     dto1_left = DtoPayload(
         summary_text="Left DTO 1",
         columns=["data"],
-        num_rows=2,
-        sample=[{"data": 1}],
         rows=[{"data": 1}, {"data": 2}],
     )
     dto1_right = DtoPayload(
         summary_text="Right DTO 1",
         columns=["data"],
-        num_rows=2,
-        sample=[{"data": 3}],
         rows=[{"data": 3}, {"data": 4}],
     )
     dto2 = DtoPayload(
         summary_text="DTO 2",
         columns=["data"],
-        num_rows=1,
-        sample=[{"data": 5}],
         rows=[{"data": 5}],
     )
 
@@ -248,16 +242,18 @@ def test_build_turn_state_update():
     assert update["history"][-1]["content"] == question
 
 
-def test_build_turn_state_update_omits_outputs_and_artifacts():
-    """Turn update must not re-send outputs/artifacts: append_list would duplicate checkpoint lists."""
+def test_build_turn_state_update_resets_outputs_and_artifacts():
+    """New turns must clear prior outputs/artifacts so users only receive fresh results."""
     snapshot = {
         "dto_store": {},
         "outputs": [{"type": "text", "text": "prior"}],
         "artifacts": [{"kind": "chart", "filename": "x.png"}],
     }
     update = build_turn_state_update("Next question", snapshot)
-    assert "outputs" not in update
-    assert "artifacts" not in update
+    assert update["outputs"] == {"__replace__": []}
+    assert update["artifacts"] == {"__replace__": []}
+    assert append_list(snapshot["outputs"], update["outputs"]) == []
+    assert append_list(snapshot["artifacts"], update["artifacts"]) == []
 
 
 def test_route_supervisor():

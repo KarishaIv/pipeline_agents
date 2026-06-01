@@ -19,8 +19,6 @@ def test_merge_dto_store_loses_type_information():
         "existing_dto": DtoPayload(
             summary_text="Existing",
             columns=["a"],
-            num_rows=1,
-            sample=[{"a": 1}],
             rows=[{"a": 1}],
         )
     }
@@ -30,15 +28,11 @@ def test_merge_dto_store_loses_type_information():
         "existing_dto": {
             "summary_text": "Updated",
             "columns": ["a"],
-            "num_rows": 1,
-            "sample": [{"a": 1}],
             "rows": [{"a": 1}],
         },
         "new_dto": {
             "summary_text": "New",
             "columns": ["b"],
-            "num_rows": 2,
-            "sample": [{"b": 2}],
             "rows": [{"b": 2}, {"b": 3}],
         },
     }
@@ -71,8 +65,6 @@ def test_issue_happens_during_graph_invoke():
             "personas_1": {
                 "summary_text": "Personas",
                 "columns": ["id", "name"],
-                "num_rows": 2,
-                "sample": [{"id": 1, "name": "Alice"}],
                 "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
                 "meta": {},
             }
@@ -103,16 +95,12 @@ def test_issue_happens_during_graph_invoke():
             "personas_1": {  # Modified from node
                 "summary_text": "Personas - Updated",
                 "columns": ["id", "name"],
-                "num_rows": 2,
-                "sample": [{"id": 1, "name": "Alice"}],
                 "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
                 "meta": {"updated": True},
             },
             "new_data_1": {  # New from node
                 "summary_text": "New data",
                 "columns": ["x"],
-                "num_rows": 1,
-                "sample": [{"x": 1}],
                 "rows": [{"x": 1}],
                 "meta": {},
             }
@@ -154,8 +142,6 @@ def test_the_real_fix_needed():
         "dto1": {
             "summary_text": "Data 1",
             "columns": ["a"],
-            "num_rows": 1,
-            "sample": [{"a": 1}],
             "rows": [{"a": 1}],
             "meta": {},
         }

@@ -174,6 +174,15 @@ class MessageHandler:
             self.per_chat_locks[chat_id] = asyncio.Lock()
         return self.per_chat_locks[chat_id]
 
+    async def _safe_send_message(self, chat_id: int, text: str, **kwargs: Any) -> bool:
+        """Send a message without letting Telegram network errors break the flow."""
+        try:
+            await self.telegram.send_message(chat_id, text, **kwargs)
+            return True
+        except Exception as exc:
+            logger.error("Failed to send Telegram message to chat %s: %s", chat_id, exc)
+            return False
+
     async def handle_command(
         self, msg: TelegramMessage, command: str, text: str
     ) -> None:
@@ -409,7 +418,7 @@ class MessageHandler:
 
             except Exception as e:
                 logger.exception("Error handling question in chat %d", msg.chat_id)
-                await self.telegram.send_message(
+                await self._safe_send_message(
                     msg.chat_id,
                     f"❌ Error: {str(e)[:200]}\n\nPlease try again or contact support.",
                 )
@@ -427,7 +436,7 @@ class MessageHandler:
             if output_type == "text":
                 chunks = parse_message_text(output.text)
                 for chunk in chunks:
-                    await self.telegram.send_message(chat_id, chunk)
+                    await self._safe_send_message(chat_id, chunk)
 
             elif output_type == "json":
                 import json
@@ -436,7 +445,7 @@ class MessageHandler:
                 message_text = f"<b>{caption}</b>\n\n<pre>{json_str}</pre>"
                 chunks = parse_message_text(message_text)
                 for chunk in chunks:
-                    await self.telegram.send_message(chat_id, chunk)
+                    await self._safe_send_message(chat_id, chunk)
 
             elif output_type == "image":
                 caption = output.caption or None
@@ -454,7 +463,7 @@ class MessageHandler:
                     )
                 except Exception as e:
                     logger.error("Failed to send photo: %s", e)
-                    await self.telegram.send_message(
+                    await self._safe_send_message(
                         chat_id,
                         f"⚠️ Could not send image: {str(e)[:100]}",
                     )
@@ -462,12 +471,19 @@ class MessageHandler:
             elif output_type == "file":
                 caption = output.caption or output.filename
                 try:
+                    content, mime_type, filename = await self.meta_agent.fetch_artifact_bytes(
+                        output.download_url
+                    )
                     await self.telegram.send_document(
-                        chat_id, output.download_url, caption=caption
+                        chat_id,
+                        content=content,
+                        filename=filename or output.filename,
+                        mime_type=mime_type or output.mime_type,
+                        caption=caption,
                     )
                 except Exception as e:
                     logger.error("Failed to send document: %s", e)
-                    await self.telegram.send_message(
+                    await self._safe_send_message(
                         chat_id,
                         f"⚠️ Could not send file ({output.filename}): {str(e)[:100]}",
                     )
@@ -475,7 +491,7 @@ class MessageHandler:
             else:
                 # Fallback for unknown types
                 logger.warning("Unknown output type: %s", output_type)
-                await self.telegram.send_message(
+                await self._safe_send_message(
                     chat_id, f"⚠️ Unknown output type: {output_type}"
                 )
 

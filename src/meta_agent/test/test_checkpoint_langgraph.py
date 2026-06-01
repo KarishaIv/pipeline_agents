@@ -23,8 +23,6 @@ def test_model_dump_converts_dto_to_dict():
     dto_payload = DtoPayload(
         summary_text="Test data",
         columns=["id", "name"],
-        num_rows=2,
-        sample=[{"id": 1, "name": "Alice"}],
         rows=[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
         meta={"source": "test"},
     )
@@ -77,8 +75,6 @@ def test_checkpoint_save_with_json_encoding(tmp_path):
         dto_payload = DtoPayload(
             summary_text="Test data",
             columns=["id", "name"],
-            num_rows=2,
-            sample=[{"id": 1, "name": "Alice"}],
             rows=[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
             meta={"source": "test"},
         )
@@ -132,8 +128,6 @@ def test_checkpoint_list_and_retrieve(tmp_path):
         dto_payload = DtoPayload(
             summary_text="Test data",
             columns=["id"],
-            num_rows=1,
-            sample=[{"id": 1}],
             rows=[{"id": 1}],
         )
 

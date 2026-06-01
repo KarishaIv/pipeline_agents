@@ -115,10 +115,8 @@ def state_to_dict(state: dict | Any) -> dict:
 def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
     """Формирует обновление состояния для очередного хода графа.
 
-    Сбрасывает управляющие поля, копирует dto_store для merge-редьюсера,
-    и добавляет вопрос в историю.
-    Не передаёт outputs/artifacts: в чекпойнте они уже есть, а поля
-    используют append_list — повторная передача снимка дублировала весь список.
+    Сбрасывает управляющие поля, текущие outputs/artifacts, копирует dto_store
+    для merge-редьюсера, и добавляет вопрос в историю.
 
     Поддерживает префикс /force для обхода OOD-проверки.
     """
@@ -140,6 +138,10 @@ def build_turn_state_update(question: str, snapshot_values: dict) -> dict:
         "current_task": "",
         "dto_store": dict(dto_store),
         "force_bypass_ood": force_bypass,
+        # outputs/artifacts используют append reducer; replace нужен, чтобы новый
+        # ответ не переотправлял результаты прошлых ходов той же Telegram-сессии.
+        "outputs": {"__replace__": []},
+        "artifacts": {"__replace__": []},
         # history использует append reducer: в update передаём только дельту текущего хода
         "history": [{"role": "user", "content": question}],
     }

@@ -1,5 +1,6 @@
 """Tests for CodeExecutionService - subprocess execution, timeout handling, and sandbox isolation."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -18,8 +19,6 @@ def sample_dto():
     return DtoPayload(
         summary_text="Test data",
         columns=["x", "y"],
-        num_rows=3,
-        sample=[],
         rows=[{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": 6}],
     )
 
@@ -46,7 +45,7 @@ def test_code_execution_config_defaults():
     assert config.timeout == 30
     assert config.max_stdout == 102400
     assert config.dto_payloads is None
-    assert config.charts_dir is None
+    assert config.artifacts_dir is None
     assert config.sandbox_globals is None
 
 
@@ -87,6 +86,19 @@ def test_code_execution_service_init_invalid_max_stdout():
 
     with pytest.raises(ValueError, match="max_stdout must be positive"):
         CodeExecutionService(config)
+
+
+def test_sandbox_save_helpers_delegate_to_artifact_service():
+    """Generated sandbox helpers should use ArtifactService instead of duplicating file writes."""
+    service = CodeExecutionService(CodeExecutionConfig())
+
+    sandbox_script = service._make_sandbox_script()
+
+    assert "ArtifactService" in sandbox_script
+    assert "_get_artifact_service().save_chart" in sandbox_script
+    assert "_get_artifact_service().save_json" in sandbox_script
+    assert "_get_artifact_service().save_csv" in sandbox_script
+    assert "_json.dump" not in sandbox_script
 
 
 @pytest.mark.asyncio
@@ -167,6 +179,72 @@ async def test_execute_code_with_dto(sample_dto):
     assert result.exit_code == 0
     assert "3" in result.stdout
     assert "9" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_execute_code_exposes_empty_dtos_and_dfs_without_payloads():
+    """Sandbox should provide empty dtos/dfs when no DTOs are passed."""
+    config = CodeExecutionConfig(dto_payloads={})
+    service = CodeExecutionService(config)
+
+    result = await service.execute_async("print(dtos == {} and dfs == {})")
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert result.stdout == "True"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_save_json_uses_artifact_directory(tmp_path):
+    """Sandbox save_json should persist raw data in the configured artifact directory."""
+    config = CodeExecutionConfig(artifacts_dir=tmp_path)
+    service = CodeExecutionService(config)
+
+    result = await service.execute_async(
+        "path = save_json([{'name': 'Alice', 'score': 10}], 'scores.json')\nprint(path)"
+    )
+
+    saved_path = Path(result.stdout.strip())
+    assert result.exit_code == 0
+    assert saved_path.exists()
+    assert saved_path.parent == tmp_path.resolve()
+    assert saved_path.suffix == ".json"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_save_csv_uses_artifact_directory(tmp_path):
+    """Sandbox save_csv should persist raw rows in the configured artifact directory."""
+    config = CodeExecutionConfig(artifacts_dir=tmp_path)
+    service = CodeExecutionService(config)
+
+    result = await service.execute_async(
+        "path = save_csv([{'name': 'Alice', 'score': 10}], 'scores.csv')\nprint(path)"
+    )
+
+    saved_path = Path(result.stdout.strip())
+    assert result.exit_code == 0
+    assert saved_path.exists()
+    assert saved_path.parent == tmp_path.resolve()
+    assert saved_path.suffix == ".csv"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_relative_library_writes_use_artifact_directory(tmp_path):
+    """Relative files created by libraries should land in the artifact directory."""
+    config = CodeExecutionConfig(artifacts_dir=tmp_path)
+    service = CodeExecutionService(config)
+    filename = "relative_library_write.csv"
+
+    result = await service.execute_async(
+        f"pd.DataFrame([{{'fruit': 'apple', 'value': 40}}]).to_csv('{filename}', index=False)\n"
+        "print('done')"
+    )
+
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    assert result.stdout == "done"
+    assert (tmp_path / filename).exists()
+    assert not Path(filename).exists()
 
 
 @pytest.mark.asyncio
@@ -281,8 +359,6 @@ async def test_execute_code_dto_serialization_error():
     dto = DtoPayload(
         summary_text="Test",
         columns=[],
-        num_rows=0,
-        sample=[],
         rows=[],
     )
 

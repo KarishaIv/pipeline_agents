@@ -127,6 +127,8 @@ async def get_artifact(artifact_id: str) -> FileResponse:
         mime_type = "application/pdf"
     elif artifact_path.suffix.lower() == ".csv":
         mime_type = "text/csv"
+    elif artifact_path.suffix.lower() == ".json":
+        mime_type = "application/json"
 
     return FileResponse(
         artifact_path,

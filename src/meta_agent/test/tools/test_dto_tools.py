@@ -90,7 +90,6 @@ def test_register_dto_and_summary(sample_dto_data):
     assert isinstance(payload, DtoPayload)
     assert payload.num_rows == 2
     assert len(payload.columns) >= 1
-    assert payload.sample
     assert payload.meta["source"] == "test"
 
     summary = dto_summary_view(name, payload, max_len=50)
@@ -133,8 +132,6 @@ def test_dto_to_dataframe():
     payload1 = DtoPayload(
         summary_text="test",
         columns=["a", "b"],
-        num_rows=2,
-        sample=[],
         rows=[{"a": 1, "b": 2}, {"a": 3, "b": 4}],
     )
     df1 = dto_to_dataframe(payload1)
@@ -146,8 +143,6 @@ def test_dto_to_dataframe():
     payload2 = DtoPayload(
         summary_text="test",
         columns=["x", "y"],
-        num_rows=0,
-        sample=[],
         rows=[],
     )
     df2 = dto_to_dataframe(payload2)
@@ -158,11 +153,24 @@ def test_dto_to_dataframe():
     payload3 = DtoPayload(
         summary_text="empty",
         columns=[],
-        num_rows=0,
-        sample=[],
         rows=[],
     )
     assert len(dto_to_dataframe(payload3)) == 0
+
+
+def test_dto_summary_derives_sample_from_rows():
+    """DtoPayload stores rows only; summaries derive a small preview from rows."""
+    payload = DtoPayload(
+        summary_text="test",
+        columns=["id"],
+        rows=[{"id": i} for i in range(6)],
+    )
+
+    assert "sample" not in payload.model_dump()
+    assert "num_rows" not in payload.model_dump()
+    assert payload.num_rows == 6
+    assert payload.get_summary("test_dto").sample == [{"id": i} for i in range(5)]
+    assert payload.get_summary("test_dto", sample_size=2).sample == [{"id": 0}, {"id": 1}]
 
 
 @pytest.mark.asyncio
@@ -192,8 +200,6 @@ async def test_list_dtos_tool_accepts_checkpoint_restored_dicts():
             "checkpoint_dto": {
                 "summary_text": "Restored data",
                 "columns": ["id", "name"],
-                "num_rows": 2,
-                "sample": [{"id": 1, "name": "Alice"}],
                 "rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
                 "meta": {"source": "checkpoint"},
             }
@@ -222,8 +228,6 @@ async def test_sample_dto_tool():
     test_payload = DtoPayload(
         summary_text="test",
         columns=["id"],
-        num_rows=10,
-        sample=[],
         rows=[{"id": i} for i in range(10)],
     )
     mock_context.custom_context = {

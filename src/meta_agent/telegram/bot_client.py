@@ -110,38 +110,46 @@ class TelegramBotClient:
     async def send_document(
         self,
         chat_id: int | str,
-        url: str,
+        content: bytes,
+        filename: str,
+        mime_type: str = "application/octet-stream",
         caption: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
     ) -> dict[str, Any]:
-        """Send a document from URL.
+        """Send a document using multipart file upload.
 
         Args:
             chat_id: Telegram chat ID.
-            url: URL of the document.
+            content: Binary document content.
+            filename: Filename for Telegram.
+            mime_type: MIME type for the document.
             caption: Optional caption.
             reply_to_message_id: Optional message ID to reply to.
 
         Returns:
             Telegram message object.
         """
-        payload = {
+        data = {
             "chat_id": chat_id,
-            "document": url,
         }
         if caption:
-            payload["caption"] = caption
-            payload["parse_mode"] = "HTML"
+            data["caption"] = caption
+            data["parse_mode"] = "HTML"
         if reply_to_message_id:
-            payload["reply_to_message_id"] = reply_to_message_id
+            data["reply_to_message_id"] = reply_to_message_id
+
+        files = {
+            "document": (filename, content, mime_type),
+        }
 
         response = await self.client.post(
             f"{self.base_url}/sendDocument",
-            json=payload,
+            data=data,
+            files=files,
         )
         response.raise_for_status()
-        data = response.json()
-        return data.get("result", {})
+        data_result = response.json()
+        return data_result.get("result", {})
 
     async def send_photo(
         self,

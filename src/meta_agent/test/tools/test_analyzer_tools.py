@@ -17,8 +17,6 @@ async def test_compute_stats_tool(sample_dto_data, mocker):
     test_payload = DtoPayload(
         summary_text="test",
         columns=["age", "income"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(
@@ -48,8 +46,6 @@ async def test_compute_stats_tool_without_numeric_columns_returns_error(mocker):
     test_payload = DtoPayload(
         summary_text="text only",
         columns=["text"],
-        num_rows=2,
-        sample=[],
         rows=[{"text": "a"}, {"text": "b"}],
     )
     mocker.patch(
@@ -71,8 +67,6 @@ async def test_compute_stats_tool_exception_branch_returns_error(sample_dto_data
     test_payload = DtoPayload(
         summary_text="test",
         columns=["age", "income"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     mocker.patch(
@@ -103,8 +97,6 @@ async def test_create_chart_tool_success_by_type(chart_type, temp_charts_dir, sa
     test_payload = DtoPayload(
         summary_text="test",
         columns=["age", "income"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     df = pd.DataFrame(sample_dto_data)
@@ -136,8 +128,6 @@ async def test_create_chart_tool_scatter_requires_numeric_columns(mocker):
     test_payload = DtoPayload(
         summary_text="labels",
         columns=["label"],
-        num_rows=2,
-        sample=[],
         rows=[{"label": "a"}, {"label": "b"}],
     )
     df = pd.DataFrame([{"label": "a"}, {"label": "b"}])
@@ -162,8 +152,6 @@ async def test_summarize_texts_tool(mock_openai_client, sample_dto_data, mocker)
     test_payload = DtoPayload(
         summary_text="test",
         columns=["text"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     mocker.patch("src.meta_agent.tools.analyzer_tools.resolve_dto_or_error", return_value=(
@@ -195,8 +183,6 @@ async def test_summarize_texts_tool_returns_error_when_no_text(mock_openai_clien
     test_payload = DtoPayload(
         summary_text="empty",
         columns=[],
-        num_rows=0,
-        sample=[],
         rows=[],
     )
     # Provide an empty DataFrame to test error case
@@ -220,8 +206,6 @@ async def test_summarize_texts_tool_llm_exception_returns_error(mock_openai_clie
     test_payload = DtoPayload(
         summary_text="test",
         columns=["text"],
-        num_rows=2,
-        sample=[],
         rows=sample_dto_data,
     )
     mocker.patch(
