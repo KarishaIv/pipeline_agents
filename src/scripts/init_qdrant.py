@@ -6,8 +6,9 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 from qdrant_client import QdrantClient, models
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 import pyarrow.parquet as pq
+from src.meta_agent.configs import QDRANT_HOST, QDRANT_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,83 @@ COLLECTIONS = [
         "vector_keys": ["emotional_vector", "rational_vector", "social_vector", "ideological_vector", "decision_vector", "general_vector"],
         "payload_keys": None,
     },
+    {
+        "name": "world_contexts",
+        "parquet": "world_contexts.parquet",
+        "index_column": "UUID",
+        "vector_keys": ["embedding"],
+        "payload_keys": None,
+    },
 ]
+
+
+def _infer_schema_type(series: pd.Series) -> Optional[PayloadSchemaType]:
+    """Сопоставить колонку DataFrame с типом Qdrant PayloadSchemaType или вернуть None для пропуска."""
+    if pd.api.types.is_bool_dtype(series):
+        return PayloadSchemaType.BOOL
+    if pd.api.types.is_integer_dtype(series):
+        return PayloadSchemaType.INTEGER
+    if pd.api.types.is_float_dtype(series):
+        return PayloadSchemaType.FLOAT
+
+    sample = series.dropna()
+    if sample.empty:
+        return PayloadSchemaType.KEYWORD
+
+    first = sample.iloc[0]
+    if isinstance(first, (list, tuple)):
+        if not first:
+            return None
+        elem = first[0]
+        if isinstance(elem, str):
+            return PayloadSchemaType.KEYWORD
+        if isinstance(elem, (int, np.integer)):
+            return PayloadSchemaType.INTEGER
+        if isinstance(elem, (float, np.floating)):
+            return PayloadSchemaType.FLOAT
+        if isinstance(elem, bool):
+            return PayloadSchemaType.BOOL
+        return None
+    if isinstance(first, (dict, np.ndarray)):
+        return None
+    if isinstance(first, (np.bool_, bool)):
+        return PayloadSchemaType.BOOL
+    if isinstance(first, (np.integer, int)):
+        return PayloadSchemaType.INTEGER
+    if isinstance(first, (np.floating, float)):
+        return PayloadSchemaType.FLOAT
+    if isinstance(first, str):
+        max_len = int(sample.astype(str).str.len().max())
+        if max_len > 200:
+            return PayloadSchemaType.TEXT
+        return PayloadSchemaType.KEYWORD
+    return PayloadSchemaType.KEYWORD
+
+
+def _create_payload_indexes(
+    client: QdrantClient,
+    collection_name: str,
+    df: pd.DataFrame,
+    payload_keys: List[str],
+) -> None:
+    """Создать payload-индексы для всех индексируемых payload-колонок."""
+    for field in payload_keys:
+        if field not in df.columns:
+            continue
+        schema_type = _infer_schema_type(df[field])
+        if schema_type is None:
+            logger.info("Пропускаем индекс %s.%s (нескалярный тип)", collection_name, field)
+            continue
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field,
+                field_schema=schema_type,
+                wait=True,
+            )
+            logger.info("Создан индекс %s.%s как %s", collection_name, field, schema_type.value)
+        except Exception as exc:
+            logger.warning("Не удалось создать индекс %s.%s: %s", collection_name, field, exc)
 
 
 def create_collection_from_parquet(
@@ -50,11 +127,14 @@ def create_collection_from_parquet(
     collection_name: str,
     parquet_path: Path,
     index_column: str = "UUID",
-    payload_keys: List[str] = [],
+    payload_keys: Optional[List[str]] = None,
     vector_keys: List[str] = ["embedding"],
     distance: Distance = Distance.COSINE,
 ) -> int:
     """Создаёт коллекцию из parquet файла с именованными векторами."""
+    if payload_keys is None:
+        payload_keys = []
+
     if client.collection_exists(collection_name):
         client.delete_collection(collection_name)
 
@@ -80,12 +160,14 @@ def create_collection_from_parquet(
         ],
     )
 
+    _create_payload_indexes(client, collection_name, df, payload_keys)
+
     return df.shape[0]
 
 
 def init_qdrant() -> QdrantClient:
     """Подключается к Qdrant и создаёт коллекции из локальных parquet-файлов."""
-    client = QdrantClient(host="localhost", port=6333)
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
     for collection in COLLECTIONS:
         parquet_path = DATA_DIR / collection["parquet"]
@@ -116,4 +198,4 @@ def init_qdrant() -> QdrantClient:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     client = init_qdrant()
-    logger.info("Qdrant initialised, collections ready.")
+    logger.info("Qdrant инициализирован, коллекции готовы.")

@@ -289,11 +289,11 @@ class PersonaAgent(ABC):
     
     def _extract_ocean(self, persona_context: Dict[str, Any]) -> Dict[str, str]:
         return {
-            "openness": persona_context.get("openness_readable", "не указано"),
-            "conscientiousness": persona_context.get("conscientiousness_readable", "не указано"),
-            "extraversion": persona_context.get("extraversion_readable", "не указано"),
-            "agreeableness": persona_context.get("agreeableness_readable", "не указано"),
-            "neuroticism": persona_context.get("neuroticism_readable", "не указано"),
+            "openness": persona_context.get("openness", "не указано"),
+            "conscientiousness": persona_context.get("conscientiousness", "не указано"),
+            "extraversion": persona_context.get("extraversion", "не указано"),
+            "agreeableness": persona_context.get("agreeableness", "не указано"),
+            "neuroticism": persona_context.get("neuroticism", "не указано"),
         }
     
     def _extract_news_context(self, persona_context: Dict[str, Any], world_context: Dict = None) -> str:
@@ -716,7 +716,12 @@ class MultiAgentReasoner:
         return graph.compile()
 
     async def _run_agent_node(self, state: GraphState) -> GraphState:
-        """Generic node to run any reasoning agent"""
+        """Run the current_agent from state and update its history key.
+
+        Reads current_agent, scenario, persona_context from state;
+        calls agent.run(), then appends reasoning+reaction to the
+        corresponding *_history list and returns updated state.
+        """
         agent_name = state["current_agent"]
         agent = self.agents[agent_name]
         

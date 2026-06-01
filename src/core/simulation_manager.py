@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Iterable, List, Dict, Any, Optional
+from typing import Iterable, List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
@@ -19,6 +19,52 @@ from config import *
 
 logger = logging.getLogger(__name__)
 
+
+def split_news_context_file_payload(
+    payload: Any, evidence: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    Split a news context payload (single snapshot or {ta_name: snapshot} map)
+    into a world_contexts dict (TA -> context) and a default fallback news_context.
+    Used by callers to normalize --news-context-path input consistently.
+    """
+    world_contexts: Dict[str, Dict[str, Any]] = {}
+    default_news_context: Optional[Dict[str, Any]] = None
+
+    if payload is None:
+        return world_contexts, default_news_context
+
+    if isinstance(payload, dict) and any(isinstance(v, dict) for v in payload.values()):
+        world_contexts = payload  # already TA map
+    elif isinstance(payload, dict):
+        # single context JSON: associate with first TA if evidence provided
+        ta_name = "default"
+        if evidence and len(evidence) > 0:
+            ta_name = evidence[0].get("target_audience_name", "default") or "default"
+        world_contexts = {ta_name: payload}
+        default_news_context = payload
+    else:
+        # fallback raw value
+        default_news_context = payload
+
+    return world_contexts, default_news_context
+
+
+def _json_safe_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Values safe for json.dumps (parquet row dicts may contain numpy ndarrays)."""
+    safe: Dict[str, Any] = {}
+    for key, value in profile.items():
+        if key == "embedding":
+            continue
+        if isinstance(value, np.ndarray):
+            safe[key] = value.tolist()
+        elif isinstance(value, (np.integer, np.floating, np.bool_)):
+            safe[key] = value.item()
+        else:
+            safe[key] = value
+    return safe
+
+
 class SimulationManager:
     """
     Менеджер для параллельных симуляций
@@ -31,35 +77,37 @@ class SimulationManager:
                  visualize: bool = True,
                  run_retries: int = 1,
                  executor_workers: int = 4,
-                 agent_mode: str = "survey",
+                 agent_mode: str = "credit",
                  decision_mode: str = "direct",
-                 survey_mode: str = "structured",
+                 survey_mode: str = "legacy",
                  news_context: Optional[Dict[str, Any]] = None,
-                 survey_questions: Optional[List[str]] = None,
+                 world_contexts: Optional[Dict[str, Dict[str, Any]]] = None,
+                 survey_questions: List[str] = None,
                  visualize_sample: int = 0,
-                 summary_visualize: bool = True,
-                 world_contexts: Optional[Dict[str, dict]] = None):
+                 summary_visualize: bool = True):
         self.out_dir = out_dir
         self.concurrency = concurrency
         self._sem = asyncio.Semaphore(concurrency)
         self.timeout = timeout
-        self.visualize = visualize
+        # legacy flag kept for backward compatibility
+        self.visualize = False
         self.run_retries = run_retries
         self.executor = ThreadPoolExecutor(max_workers=executor_workers)
         self.agent_mode = agent_mode
         self.decision_mode = decision_mode
         self.survey_mode = survey_mode
         self.news_context = news_context
+        self.world_contexts = world_contexts or {}
         self.survey_questions = survey_questions or []
         self.visualize_sample = max(0, int(visualize_sample))
         self.summary_visualize = bool(summary_visualize)
-        self.world_contexts = world_contexts or {}  # {ta_name -> news_context}
 
-    def _resolve_world_context(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        if self.news_context is not None:
-            return self.news_context
-        ta_name = profile.get("target_audience_name", "")
-        return self.world_contexts.get(ta_name, {})
+    def _select_context_for_profile(self, profile: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Return the context actually used for this persona: prefer per-TA world_contexts, fallback to news_context."""
+        ta_name = profile.get("target_audience_name", "") or profile.get("target_audience", "")
+        if ta_name and ta_name in self.world_contexts:
+            return self.world_contexts[ta_name]
+        return self.news_context
 
     async def _run_single(self, profile: Dict[str, Any], steps: int, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -70,39 +118,45 @@ class SimulationManager:
         
         for attempt in range(1, self.run_retries + 2):
             try:
+                selected_context = self._select_context_for_profile(profile)
                 if self.agent_mode == "survey":
                     logger.debug(f"[Persona:{persona_name}] Запуск опросного режима")
-                    world_ctx = self._resolve_world_context(profile)
                     if self.survey_mode == "structured":
                         reasoner = StructuredSurveyReasoner(
                             profile,
-                            world_context=world_ctx,
+                            world_context=selected_context,
                         )
                     else:
-                        reasoner = MultiAgentReasoner(profile, world_context=world_ctx)
+                        # legacy: inject for PersonaAgent._extract_news_context
+                        profile_for_run = dict(profile)
+                        if selected_context:
+                            profile_for_run["news_context"] = selected_context
+                        reasoner = MultiAgentReasoner(profile_for_run)
                     survey_results = await reasoner.answer_survey_questions(self.survey_questions)
+                    # attach the actual context used so storage can link it
                     return {
                         "profile": profile,
                         "survey_responses": survey_results, 
                         "mode": "survey",
                         "survey_mode": self.survey_mode,
                         "total_questions": len(self.survey_questions),
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "world_context": selected_context,
                     }
                 else:
                     logger.debug(f"[Persona:{persona_name}] Запуск кредитного режима, шагов: {steps}")
-                    if MultiAgentSystem is None:
-                        raise RuntimeError(
-                            "Credit mode is unavailable in this branch configuration. Use --agent_mode survey."
-                        )
                     mas = MultiAgentSystem(
                         profile,
                         steps=steps,
                         decision_mode=self.decision_mode,
-                        news_context=self.news_context,
+                        news_context=selected_context,
                     )
                     coro = mas.run_simulation()
                     result = await asyncio.wait_for(coro, timeout=self.timeout)
+                    # ensure the used context is present for downstream storage
+                    if selected_context and not result.get("news_context"):
+                        result = dict(result)
+                        result["news_context"] = selected_context
                     return result
             except Exception as e:
                 logger.warning(f"[Persona:{persona_name}] Сбой симуляции, попытка {attempt}: {e}")
@@ -132,6 +186,7 @@ class SimulationManager:
                 else:
                     logger.debug(f"[Run:{run_id}] Сохранение результатов кредитной симуляции")
                     await StorageManager.save_result_stream(result, out_dir, run_id)
+                    # keep run_id for optional post-run visualizations
                     result["_run_id"] = run_id
                 
                 elapsed = time.time() - started
@@ -141,9 +196,9 @@ class SimulationManager:
             except Exception as e:
                 logger.error(f"[Run:{run_id}] FAILED: {e}")
                 failure = {
-                    "run_id": run_id, 
-                    "profile": profile, 
-                    "error": str(e), 
+                    "run_id": run_id,
+                    "profile": _json_safe_profile(profile),
+                    "error": str(e),
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 await StorageManager.save_json_async(failure, out_dir / f"{run_id}_error.json")

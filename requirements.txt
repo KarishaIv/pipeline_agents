@@ -7,10 +7,11 @@ torch>=2.0.0
 transformers>=4.30.0
 tqdm>=4.65.0
 huggingface_hub>=0.17.0
-langchain>=0.1.0
-langchain-openai>=0.1,<0.2
-langchain-core>=0.1.0
-yandex-chain>=0.0.10
+langchain==0.2.1
+langchain-core==0.2.43
+langchain-text-splitters==0.2.4
+yandex-chain==0.0.10
+# langchain-openai 1.x conflicts with yandex-chain 0.0.10
 langgraph>=0.0.40
 pydantic>=2.0.0
 httpx>=0.24.0

@@ -1,12 +1,19 @@
 import numpy as np
 import os
 from pathlib import Path
-from yandex_chain import YandexGPTModel
 
 PROJECT_ROOT = Path(__file__).parent
 
+YANDEX_BASE_URL = "https://llm.api.cloud.yandex.net/v1"
+YANDEX_EMBED_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
 
-LLM_MODEL = YandexGPTModel.Pro
+LLM_MODEL = "yandexgpt-5.1"
+
+
+def get_model_uri(model: str = None) -> str:
+    """Build a full Yandex GPT model URI: gpt://{folder_id}/{model}."""
+    folder_id = os.getenv("YANDEX_FOLDER_ID", "")
+    return f"gpt://{folder_id}/{model or LLM_MODEL}"
 LLM_TEMPERATURE = 0.5
 LLM_MAX_RETRIES = 3
 

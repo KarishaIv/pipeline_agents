@@ -1,34 +1,42 @@
 # Survey Pipeline with Structured Reasoning
 
-Репозиторий для генерации синтетических персон и запуска `survey pipeline (опросного пайплайна)`.
+Репозиторий для генерации синтетических персон и запуска мультиагентных симуляций в двух режимах:
+- `credit mode (кредитный режим)` для моделирования реакции на кредитное предложение;
+- `survey mode (опросный режим)` для генерации ответов на опросные вопросы.
 
-Текущий основной инженерный результат в этой ветке:
-- `structured survey mode (структурированный survey-режим)`;
-- поддержка внешнего `news context (новостного контекста)` через `JSON snapshot (JSON-снимок)`;
-- `survey benchmark (survey-бенчмарк)` для сравнения `legacy (старого режима)` и `structured (структурированного режима)`.
+В репозитории также есть `meta-agent` — отдельный LangGraph-оркестратор для интерактивной аналитики по данным пайплайна. Он отвечает на вопросы пользователя, извлекает данные из Qdrant, запускает sandboxed Python-код, создает артефакты (графики, JSON, CSV) и может отдавать результаты через HTTP API или Telegram-бота.
 
-## Ключевые файлы
+Текущий основной инженерный результат в репозитории — `structured survey mode (структурированный survey-режим)` и `meta-agent` для интерактивного анализа результатов. Structured survey работает через явные `voices (голоса)`, кодовую агрегацию и поддерживает подключение `news context (новостного контекста)`.
+
+## Что есть в репозитории
 
 - `main.py` — главный `CLI entrypoint (интерфейс командной строки)`.
 - `src/orchestration.py` — сборка полного пайплайна.
-- `src/core/simulation_manager.py` — запуск симуляций и выбор `survey mode (survey-режима)`.
-- `src/agents/survey_agent.py` — `legacy survey runtime (старый survey-рантайм)`.
-- `src/agents/structured_survey_reasoner.py` — `structured survey runtime (структурированный survey-рантайм)`.
-- `src/agents/survey_news_adapter.py` — адаптация `news context (новостного контекста)` к вопросам опроса.
-- `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных `news JSON (news JSON-файлов)`.
-- `scripts/benchmarks/benchmark_survey_reasoning.py` — `survey benchmark (survey-бенчмарк)`.
+- `src/core/simulation_manager.py` — маршрутизация в `credit` или `survey` режим.
+- `src/agents/structured_survey_reasoner.py` — новый `structured survey runtime (структурированный survey-рантайм)`.
+- `src/agents/survey_news_adapter.py` — `news adapter (адаптер новостного контекста)` для survey.
+- `src/schemas/news_context_schema.py` — схема и `compatibility normalization (нормализация совместимости)` входных news JSON.
+- `src/meta_agent/` — LangGraph meta-agent для интерактивной аналитики, Qdrant-поиска, выполнения кода и доставки артефактов.
+- `src/scripts/serve_meta_agent.py` — FastAPI API meta-agent (`POST /ask`, `GET /artifacts/{artifact_id}`).
+- `src/scripts/serve_telegram_bot.py` — Telegram long-polling бот для meta-agent.
+- `src/scripts/init_qdrant.py` — инициализация Qdrant-коллекций из parquet-данных.
+- `scripts/benchmarks/benchmark_survey_reasoning.py` — основной `survey benchmark (survey-бенчмарк)`.
 
-## Окружение
+## Зависимости и окружение
 
 Рекомендуемая среда:
 - `Python 3.12`
-- `.env` с:
-  - `YANDEX_API_KEY` — предпочтительно;
-  - `YANDEX_FOLDER_ID`.
+- `.env` с переменными:
+  - `YANDEX_API_KEY`
+  - `YANDEX_FOLDER_ID`
 
-Для обратной совместимости код также принимает `OPENAI_API_KEY` как имя переменной для ключа, но в общей ветке лучше использовать `YANDEX_API_KEY`.
+Установка (рекомендуется uv для pyproject.toml):
 
-Установка:
+```bash
+uv sync
+```
+
+Или классический venv:
 
 ```bash
 python3.12 -m venv .venv312
@@ -36,19 +44,9 @@ source .venv312/bin/activate
 pip install -r requirements.txt
 ```
 
-## Данные через DVC
+## Быстрый запуск survey-пайплайна
 
-`main (главная ветка)` уже перевела часть данных в `DVC (систему версионирования данных)`, поэтому перед запуском нужно либо иметь локальные файлы, либо подтянуть их:
-
-```bash
-dvc pull data/evidence.json.dvc data/survey_questions.json.dvc data/Nemotron.dvc data/Synthetic.dvc
-```
-
-Если планируется работа с дополнительными датасетами, можно подтянуть и остальные `.dvc`-файлы из `data/` и `data_4_qdrant/`.
-
-## Быстрый запуск
-
-Рекомендуемый режим по умолчанию — `structured survey mode (структурированный survey-режим)`.
+### Рекомендуемый режим: structured survey
 
 ```bash
 source .venv312/bin/activate
@@ -61,34 +59,23 @@ python main.py \
   --timeout 60
 ```
 
-Этот запуск:
-- загружает `evidence (описание аудиторий)`;
+Что делает этот запуск:
+- загружает `evidence (описание аудиторий)` из `data/evidence.json`;
 - генерирует или фильтрует персоны;
 - загружает вопросы из `data/survey_questions.json`;
 - прогоняет для каждой персоны `structured survey reasoner (структурированный survey-рантайм)`;
-- сохраняет профили и агрегированные результаты в `outputs/`.
+- сохраняет `profile_*.json`, `survey_summary.json` и остальные артефакты в `outputs/`.
 
-## Режимы survey
-
-### Structured
+### Старый режим: legacy survey
 
 ```bash
-python main.py --agent_mode survey --survey-mode structured
+source .venv312/bin/activate
+python main.py \
+  --agent_mode survey \
+  --survey-mode legacy
 ```
 
-Это основной режим. Он использует:
-- явные `voices (голоса)`;
-- кодовую агрегацию;
-- `resolver (разрешитель конфликта)`;
-- поддержку `news context (новостного контекста)`.
-
-### Legacy
-
-```bash
-python main.py --agent_mode survey --survey-mode legacy
-```
-
-Этот режим нужен в основном как `baseline (базовый режим)` для сравнения с `structured (структурированным режимом)`.
+Этот режим нужен в основном для сравнения с `structured survey mode (структурированным survey-режимом)`.
 
 ## Подключение news context
 
@@ -101,6 +88,7 @@ python main.py --agent_mode survey --survey-mode legacy
 Пример запуска:
 
 ```bash
+source .venv312/bin/activate
 python main.py \
   --agent_mode survey \
   --survey-mode structured \
@@ -109,19 +97,21 @@ python main.py \
 
 Важно:
 - `main.py` принимает только один `news context file (файл новостного контекста)` на запуск;
-- если в наборе персон смешаны `mothers (матери)` и `fathers (отцы)`, один контекст будет точнее для одной аудитории и слабее для другой;
-- для строгой оценки влияния новостей лучше запускать `benchmark (бенчмарк)` отдельно по аудиториям.
+- если в наборе персон смешаны `mothers` и `fathers`, то один и тот же контекст будет точнее для одной аудитории и слабее для другой;
+- для строгой оценки эффекта новостей лучше запускать `survey benchmark (survey-бенчмарк)` отдельно по аудиториям.
 
 ## Основные флаги
 
-- `--agent_mode survey|credit`
-  - общий режим пайплайна; в этой ветке основной рабочий путь — `survey`.
+- `--agent_mode credit|survey`
+  - выбирает общий режим пайплайна.
 - `--survey-mode legacy|structured`
-  - выбор между старым и новым `survey runtime (survey-рантаймом)`.
+  - выбирает старый или новый survey runtime.
+- `--decision-mode direct|compact_debate`
+  - режим кредитного рассуждения для `credit mode (кредитного режима)`.
 - `--news-context-path PATH`
-  - путь к входному `news JSON (news JSON-файлу)`.
+  - путь к входному `news context JSON (news context JSON-файлу)` для `structured survey` или `compact_debate`.
 - `--evidence PATH`
-  - путь к `evidence JSON (evidence JSON-файлу)`.
+  - путь к `evidence JSON (evidence JSON-файлу)` с описанием целевых аудиторий.
 - `--output PATH`
   - директория сохранения результатов.
 - `--concurrency N`
@@ -129,13 +119,139 @@ python main.py \
 - `--timeout SECONDS`
   - таймаут на одну персону.
 - `--no-pgm`
-  - отключает `PGM generation (PGM-генерацию)`.
+  - использовать не PGM-генерацию, а фильтрацию реальных данных.
 - `--no-oceanflag`
-  - отключает расчет `OCEAN traits (личностных черт OCEAN)`.
+  - отключить перенос `OCEAN traits (личностных черт OCEAN)`.
 
 ## Survey benchmark
 
-Для воспроизводимого сравнения `legacy vs structured (старого и нового режима)` и `with news vs without news (с новостями и без новостей)`:
+Для воспроизводимого сравнения `legacy vs structured (старого и нового режима)` и `with news vs without news (с новостями и без новостей)` используй:
+
+```bash
+source .venv312/bin/activate
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_run
+```
+
+Пример с новостным контекстом:
+
+```bash
+source .venv312/bin/activate
+python scripts/benchmarks/benchmark_survey_reasoning.py \
+  --profiles-glob "outputs/profile_*.json" \
+  --profile-sample 10 \
+  --question-sample 8 \
+  --repeats 2 \
+  --concurrency 1 \
+  --survey-modes structured \
+  --judge-sample 16 \
+  --locale ru \
+  --seed 17 \
+  --judge-seed 23 \
+  --news-context-path data/news_context/context_mothers_35_39_20260426.json \
+  --out-dir outputs/benchmarks/survey_reasoning/example_structured_news_run
+```
+
+Главные выходы `survey benchmark (survey-бенчмарка)`:
+- `metrics.json`
+- `predictions.csv`
+- `judge_results.csv`
+- `manifest.json`
+
+## Credit mode
+
+`credit mode (кредитный режим)` остается доступным:
+
+```bash
+source .venv312/bin/activate
+python main.py \
+  --agent_mode credit \
+  --decision-mode compact_debate
+```
+
+При необходимости туда тоже можно передать `--news-context-path`, но основной финальный результат в репозитории сейчас связан именно с `structured survey mode (структурированным survey-режимом)`.
+
+## Meta-agent
+
+`src/meta_agent/` — интерактивный аналитический агент поверх данных пайплайна. Он использует LangGraph, Qdrant, Yandex GPT и изолированный сервис выполнения Python-кода.
+
+Что умеет:
+- принимать пользовательский вопрос через `POST /ask` или Telegram;
+- искать релевантные данные в Qdrant-коллекциях `questions`, `personas`, `target_audiences`, `simulations`, `world_contexts`;
+- выполнять анализ полученных данных и создавать артефакты;
+- выполнять Python-код через `CodeExecutionService`;
+- создавать и возвращать артефакты: графики, JSON и CSV;
+
+Минимальный запуск с нуля:
+
+```bash
+uv sync
+dvc pull
+python -m src.scripts.init_qdrant
+docker run -p 6333:6333 -v "$(pwd)/qdrant_storage:/qdrant/storage" qdrant/qdrant
+python -m src.scripts.serve_meta_agent
+```
+
+Запрос:
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Построй диаграмму распределения возрастов персон"}'
+```
+
+Telegram-бот:
+
+```bash
+python -m src.scripts.serve_telegram_bot
+```
+
+Если API временно недоступен, бот можно запустить в dev-режиме без HTTP-вызова meta-agent:
+
+```bash
+TELEGRAM_LOCAL_META_AGENT=1 python -m src.scripts.serve_telegram_bot
+```
+
+В этом режиме бот вызывает meta-agent in-process. 
+
+Подробная документация находится в `src/meta_agent/README.md`.
+
+## 📚 Ключевые компоненты
+
+### Agents
+
+| Agent | Роль | Технологии |
+|-------|------|-----------|
+| **PersonaAgent** | Моделирование клиента | LLM (GPT), structured outputs |
+| **EmotionAgent** | Отслеживание эмоций | LLM psychological prompts |
+| **ToolAgent** | Симуляция приложения | Rule-based + LLM |
+| **FinancialAgent** | Генерация push | LLM personalization |
+| **DecisionAgent** | Принятие решения | LLM reasoning |
+
+### Schemas (Pydantic)
+
+Все данные валидируются через Pydantic:
+- `PersonaGoal`, `PersonaAction`, `PersonaReaction`, `PersonaSessionRecord`
+- `EmotionalStateSchema` (mood, stress, confidence, bank_trust, urgency)
+- `ToolResponseSchema` (status, message, data)
+- `FinancialPush`, `FinancialPrediction`
+- `DecisionOutcome` (will_take_credit, reasoning, emotional_factors)
+
+### Core Utilities
+
+- **llm_utils.py**: `robust_llm_call()` с retry logic и structured outputs
+- **storage.py**: Асинхронное сохранение JSON
+- **visualization.py**: Графики динамики эмоций (matplotlib)
 
 ```bash
 source .venv312/bin/activate
@@ -177,8 +293,9 @@ python scripts/benchmarks/benchmark_survey_reasoning.py \
 - `judge_results.csv`
 - `manifest.json`
 
-## Что не входит в основной пайплайн
+**Модель**: Yandex GPT   
+**Режим**: Structured outputs (JSON mode)  
+**Retry**: До 3 попыток при ошибках API  
+**Timeout**: Конфигурируемый per-call
 
-Внешний генератор `news context (новостного контекста)` из папки `multi_agent_rag/` не является частью основного пайплайна этого репозитория. В эту ветку перенесена только:
-- совместимость с его `JSON outputs (JSON-выходами)`;
-- поддержка готовых `news snapshots (снимков новостного контекста)`.
+---

@@ -9,6 +9,9 @@ __pycache__/
 .env
 .venv
 .venv312/
+.vscode/
+
+.coverage
 Basic PGM.ipynb
 _canonical_repo/
 
@@ -21,6 +24,17 @@ pipeline.log
 
 # Qdrant files
 qdrant_storage/
+
+# sgr_agent_core logs
+logs/
+
+**sqlite3-shm**
+**sqlite3-wal**
+**.egg**
+
+benchmark_reports
+data/charts
+coursework.tex
 
 # Local benchmark/news worktrees
 data/benchmark/

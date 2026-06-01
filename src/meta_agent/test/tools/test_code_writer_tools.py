@@ -1,0 +1,476 @@
+"""Tests for code_writer_tools.py - ValidateCodeTool and ExecuteCodeTool tool wrappers."""
+
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from src.meta_agent.dto import DtoPayload
+
+
+@pytest.mark.asyncio
+async def test_validate_code_tool_safe_code(mocker):
+    """Test ValidateCodeTool with import-free safe code."""
+    from src.meta_agent.tools.code_writer_tools import ValidateCodeTool
+
+    mock_context = MagicMock()
+    mock_config = MagicMock()
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=[],
+        rows=[],
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+
+    safe_code = "values = [1, 2, 3]; print(sum(values) / len(values))"
+    safe_tool = ValidateCodeTool(
+        reasoning="Validate safe snippet",
+        dto_names=["test_dto"],
+        code=safe_code,
+    )
+    result_safe = await safe_tool(mock_context, mock_config)
+    data_safe = json.loads(result_safe)
+    assert data_safe.get("is_runnable", False) is True
+    assert "warnings" in data_safe
+    assert not any("import" in warning.lower() for warning in data_safe.get("warnings", []))
+
+
+@pytest.mark.asyncio
+async def test_validate_code_tool_pandas_import_is_warned(mocker):
+    """Test ValidateCodeTool flags pandas import with warning."""
+    from src.meta_agent.tools.code_writer_tools import ValidateCodeTool
+
+    mock_context = MagicMock()
+    mock_config = MagicMock()
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, {"rows": []}, None),
+    )
+
+    pandas_import_code = "import pandas as pd; df = pd.DataFrame(); print(df.describe())"
+    pandas_import_tool = ValidateCodeTool(
+        reasoning="Validate legacy pandas import snippet",
+        dto_names=["test_dto"],
+        code=pandas_import_code,
+    )
+    result_pandas_import = await pandas_import_tool(mock_context, mock_config)
+    data_pandas_import = json.loads(result_pandas_import)
+    assert data_pandas_import.get("is_runnable", False) is True
+    assert any("импорт" in warning.lower() for warning in data_pandas_import.get("warnings", []))
+
+
+@pytest.mark.asyncio
+async def test_validate_code_tool_dangerous_code_is_warned(mocker):
+    """Test ValidateCodeTool flags dangerous patterns with warnings."""
+    from src.meta_agent.tools.code_writer_tools import ValidateCodeTool
+
+    mock_context = MagicMock()
+    mock_config = MagicMock()
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, {"rows": []}, None),
+    )
+
+    dangerous_code = "import os; os.system('rm -rf /'); exec('print(1)')"
+    dangerous_tool = ValidateCodeTool(
+        reasoning="Validate dangerous snippet",
+        dto_names=["test_dto"],
+        code=dangerous_code,
+    )
+    result_danger = await dangerous_tool(mock_context, mock_config)
+    data_danger = json.loads(result_danger)
+    assert data_danger.get("is_runnable", False) is True
+    assert any("запрещ" in w.lower() or "import" in w.lower() for w in data_danger.get("warnings", []))
+
+
+@pytest.mark.asyncio
+async def test_validate_code_tool_empty_code_returns_error(mocker):
+    """Test ValidateCodeTool rejects empty code."""
+    from src.meta_agent.tools.code_writer_tools import ValidateCodeTool
+
+    mock_context = MagicMock()
+    mock_config = MagicMock()
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, {"rows": []}, None),
+    )
+
+    tool = ValidateCodeTool(reasoning="Validate empty code", dto_names=["test_dto"], code="   ")
+    result = await tool(mock_context, mock_config)
+    payload = json.loads(result)
+
+    assert payload["is_runnable"] is False
+    assert any("пустой" in err.lower() for err in payload.get("errors", []))
+
+
+@pytest.mark.asyncio
+async def test_validate_code_tool_syntax_error_returns_error(mocker):
+    """Test ValidateCodeTool reports syntax errors."""
+    from src.meta_agent.tools.code_writer_tools import ValidateCodeTool
+
+    mock_context = MagicMock()
+    mock_config = MagicMock()
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, {"rows": []}, None),
+    )
+
+    tool = ValidateCodeTool(
+        reasoning="Validate syntax failure",
+        dto_names=["test_dto"],
+        code="for i in range(3) print(i)",
+    )
+    result = await tool(mock_context, mock_config)
+    payload = json.loads(result)
+
+    assert payload["is_runnable"] is False
+    assert any("синтакс" in err.lower() for err in payload.get("errors", []))
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_with_dto(temp_charts_dir, sample_dto_data, mocker):
+    """Test ExecuteCodeTool delegates to CodeExecutionService."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "id", "income", "text"],
+        rows=sample_dto_data,
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+
+    # Mock CodeExecutionService
+    mock_executor = AsyncMock()
+    mock_executor.execute_async.return_value = MagicMock(
+        stdout="Stats computed",
+        stderr="",
+        exit_code=0,
+        timeout_occurred=False,
+    )
+
+    with patch(
+        "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
+        return_value=mock_executor,
+    ):
+        tool = ExecuteCodeTool(
+            reasoning="Run stats snippet",
+            dto_names=["test_dto"],
+            code="df.describe(); print('Stats computed')",
+        )
+        mock_context = MagicMock()
+        mock_config = MagicMock()
+
+        result = await tool(mock_context, mock_config)
+
+        data = json.loads(result)
+        assert "output" in data
+        assert "Stats computed" in data["output"]
+        assert data["dto_names"] == ["test_dto"]
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_errors_when_requested_dto_is_missing(mocker):
+    """Explicit missing dto_names should return an error instead of running as standalone code."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(
+            None,
+            None,
+            json.dumps({
+                "success": False,
+                "error": "DTO 'missing_dto' не найден. Сначала вызови list_dtos.",
+                "error_type": "not_found",
+            }, ensure_ascii=False),
+        ),
+    )
+    mock_executor_cls = mocker.patch("src.meta_agent.tools.code_writer_tools.CodeExecutionService")
+
+    tool = ExecuteCodeTool(
+        reasoning="Run with requested DTO",
+        dto_names=["missing_dto"],
+        code="print('should not run')",
+    )
+
+    result = await tool(MagicMock(), MagicMock())
+    payload = json.loads(result)
+
+    assert payload["success"] is True
+    assert payload["dto_names"] == ["missing_dto"]
+    assert payload["output"] == "(нет вывода)"
+    assert payload["error"] == "DTO 'missing_dto' не найден. Сначала вызови list_dtos."
+    assert "warnings" not in payload
+    mock_executor_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_runs_without_dto_names(mocker):
+    """ExecuteCodeTool should run standalone code when no DTOs are provided."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    mock_resolve = mocker.patch("src.meta_agent.tools.code_writer_tools.resolve_dto_or_error")
+    mock_executor = AsyncMock()
+    mock_executor.execute_async.return_value = MagicMock(
+        stdout="standalone",
+        stderr="",
+        exit_code=0,
+        timeout_occurred=False,
+    )
+    init_calls = []
+
+    def track_init(config):
+        init_calls.append(config)
+        return mock_executor
+
+    with patch(
+        "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
+        side_effect=track_init,
+    ):
+        tool = ExecuteCodeTool(
+            reasoning="Run standalone calculation",
+            dto_names=[],
+            code="print('standalone')",
+        )
+        mock_context = MagicMock()
+        mock_context.custom_context = {}
+
+        result = await tool(mock_context, MagicMock())
+
+    payload = json.loads(result)
+    assert payload["success"] is True
+    assert payload["dto_names"] == []
+    assert payload["output"] == "standalone"
+    assert mock_context.custom_context["artifacts"] == []
+    assert init_calls[0].dto_payloads == {}
+    mock_resolve.assert_not_called()
+    mock_executor.execute_async.assert_awaited_once_with("print('standalone')")
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_without_dto_names_registers_artifacts(tmp_path, mocker):
+    """Standalone code should still be able to save and register artifacts."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    mocker.patch("src.meta_agent.tools.code_writer_tools.CHARTS_DIR", tmp_path)
+
+    tool = ExecuteCodeTool(
+        reasoning="Export generated data",
+        dto_names=[],
+        code="save_json({'status': 'ok'}, 'standalone.json')\nprint('saved')",
+    )
+    mock_context = MagicMock()
+    mock_context.custom_context = {"artifacts": []}
+
+    result = await tool(mock_context, MagicMock())
+    payload = json.loads(result)
+    artifacts = mock_context.custom_context["artifacts"]
+
+    assert payload["output"] == "saved"
+    assert len(artifacts) == 1
+    assert artifacts[0].kind == "data"
+    assert artifacts[0].filename == "standalone.json"
+    assert artifacts[0].metadata["source"] == "code_execution"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_sets_default_output_when_silent(sample_dto_data, mocker):
+    """Test ExecuteCodeTool returns default output when code is silent."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "id", "income", "text"],
+        rows=sample_dto_data,
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+
+    # Mock CodeExecutionService
+    mock_executor = AsyncMock()
+    mock_executor.execute_async.return_value = MagicMock(
+        stdout="",
+        stderr="",
+        exit_code=0,
+        timeout_occurred=False,
+    )
+
+    with patch(
+        "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
+        return_value=mock_executor,
+    ):
+        tool = ExecuteCodeTool(reasoning="Silent run", dto_names=["test_dto"], code="x = 1")
+        result = await tool(MagicMock(), MagicMock())
+        payload = json.loads(result)
+
+        assert payload["dto_names"] == ["test_dto"]
+        assert payload["output"] == "(нет вывода)"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_returns_error_output(sample_dto_data, mocker):
+    """Test ExecuteCodeTool includes error text in response."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "id", "income", "text"],
+        rows=sample_dto_data,
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+
+    # Mock CodeExecutionService
+    mock_executor = AsyncMock()
+    mock_executor.execute_async.return_value = MagicMock(
+        stdout="",
+        stderr="ValueError: boom",
+        exit_code=1,
+        timeout_occurred=False,
+    )
+
+    with patch(
+        "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
+        return_value=mock_executor,
+    ):
+        tool = ExecuteCodeTool(reasoning="Failing run", dto_names=["test_dto"], code="raise ValueError('x')")
+        result = await tool(MagicMock(), MagicMock())
+        payload = json.loads(result)
+
+        assert payload["dto_names"] == ["test_dto"]
+        assert payload["error"] == "ValueError: boom"
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_registers_json_and_csv_artifacts(tmp_path, sample_dto_data, mocker):
+    """ExecuteCodeTool should register JSON and CSV artifacts through ArtifactService."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["age", "id", "income", "text"],
+        rows=sample_dto_data,
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+    mocker.patch("src.meta_agent.tools.code_writer_tools.CHARTS_DIR", tmp_path)
+
+    tool = ExecuteCodeTool(
+        reasoning="Export raw rows",
+        dto_names=["test_dto"],
+        code=(
+            "save_json(dfs['test_dto'], 'rows.json')\n"
+            "save_csv(dfs['test_dto'], 'rows.csv')\n"
+            "print('exported')"
+        ),
+    )
+    mock_context = MagicMock()
+    mock_context.custom_context = {"artifacts": []}
+
+    result = await tool(mock_context, MagicMock())
+    payload = json.loads(result)
+    artifacts = mock_context.custom_context["artifacts"]
+
+    assert payload["output"] == "exported"
+    assert {artifact.kind for artifact in artifacts} == {"data", "csv"}
+    assert {artifact.mime_type for artifact in artifacts} == {"application/json", "text/csv"}
+    assert all(artifact.metadata["source"] == "code_execution" for artifact in artifacts)
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_registers_direct_library_file_writes(tmp_path, mocker):
+    """Files created directly by libraries should be in CHARTS_DIR and registered."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    mocker.patch("src.meta_agent.tools.code_writer_tools.CHARTS_DIR", tmp_path)
+
+    tool = ExecuteCodeTool(
+        reasoning="Export generated table",
+        dto_names=[],
+        code=(
+            "pd.DataFrame([{'fruit': 'apple', 'value': 40}]).to_csv('fruit_data.csv', index=False)\n"
+            "print('exported')"
+        ),
+    )
+    mock_context = MagicMock()
+    mock_context.custom_context = {"artifacts": []}
+
+    result = await tool(mock_context, MagicMock())
+    payload = json.loads(result)
+    artifacts = mock_context.custom_context["artifacts"]
+
+    assert payload["output"] == "exported"
+    assert (tmp_path / "fruit_data.csv").exists()
+    assert len(artifacts) == 1
+    assert artifacts[0].kind == "csv"
+    assert artifacts[0].filename == "fruit_data.csv"
+    assert artifacts[0].path == str(tmp_path / "fruit_data.csv")
+
+
+def test_code_writer_tool_metadata():
+    """Verify tool names and descriptions are correct."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool, ValidateCodeTool
+
+    tools = [
+        ValidateCodeTool(reasoning="meta", dto_names=["dto"], code="print(1)"),
+        ExecuteCodeTool(reasoning="meta", dto_names=["dto"], code="print(1)"),
+    ]
+    for tool in tools:
+        name = tool.tool_name
+        assert name in ["validate_code", "execute_code"]
+        assert len(tool.description) > 20
+
+
+@pytest.mark.asyncio
+async def test_execute_code_tool_creates_service_with_correct_config(sample_dto_data, mocker):
+    """Test ExecuteCodeTool creates CodeExecutionService with correct configuration."""
+    from src.meta_agent.tools.code_writer_tools import ExecuteCodeTool
+
+    test_payload = DtoPayload(
+        summary_text="test",
+        columns=["x"],
+        rows=[{"x": 1}],
+    )
+    mocker.patch(
+        "src.meta_agent.tools.code_writer_tools.resolve_dto_or_error",
+        return_value=(None, test_payload, None),
+    )
+
+    # Track CodeExecutionService initialization
+    init_calls = []
+
+    def track_init(config):
+        init_calls.append(config)
+        executor = AsyncMock()
+        executor.execute_async.return_value = MagicMock(
+            stdout="test",
+            stderr="",
+            exit_code=0,
+            timeout_occurred=False,
+        )
+        return executor
+
+    with patch(
+        "src.meta_agent.tools.code_writer_tools.CodeExecutionService",
+        side_effect=track_init,
+    ):
+        tool = ExecuteCodeTool(reasoning="test", dto_names=["test_dto"], code="print('test')")
+        await tool(MagicMock(), MagicMock())
+
+        assert len(init_calls) == 1
+        config = init_calls[0]
+        assert "test_dto" in config.dto_payloads
+        assert config.dto_payloads["test_dto"] == test_payload
+        assert config.timeout > 0  # Should have a timeout value

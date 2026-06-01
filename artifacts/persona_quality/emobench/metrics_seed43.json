@@ -1,0 +1,99 @@
+{
+  "n_rows": 180,
+  "n_labeled": 180,
+  "n_labeled_clean": 180,
+  "accuracy": 0.8,
+  "macro_f1": 0.764102564102564,
+  "accuracy_clean": 0.8,
+  "macro_f1_clean": 0.764102564102564,
+  "accuracy_by_domain": {
+    "complex_emotions": {
+      "accuracy": 1.0,
+      "n": 48
+    },
+    "personal_beliefs_and_experiences": {
+      "accuracy": 0.6666666666666666,
+      "n": 72
+    },
+    "perspective_taking": {
+      "accuracy": 0.8,
+      "n": 60
+    }
+  },
+  "accuracy_by_taxonomy": {
+    "cultural_value:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "cultural_value:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "emotion_transition:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "emotion_transition:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "false_belief:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "false_belief:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "faux_pas:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "faux_pas:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "mixture_of_emotions:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "mixture_of_emotions:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "persona:cause": {
+      "accuracy": 0.0,
+      "n": 12
+    },
+    "persona:emotion": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "sentimental_value:cause": {
+      "accuracy": 1.0,
+      "n": 12
+    },
+    "sentimental_value:emotion": {
+      "accuracy": 0.0,
+      "n": 12
+    },
+    "strange_story:cause": {
+      "accuracy": 0.0,
+      "n": 12
+    }
+  },
+  "error_breakdown": {
+    "<empty>": 180
+  },
+  "benchmark": "emobench",
+  "locale": "en",
+  "persona_sample": 12,
+  "items_per_persona": 15,
+  "partial": false,
+  "quota": {
+    "calls_made": 180,
+    "max_calls": 360,
+    "elapsed_seconds": 44.49,
+    "max_runtime_seconds": 5400.0
+  }
+}
